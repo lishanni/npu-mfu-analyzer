@@ -1,0 +1,71 @@
+# NPU MFU Analyzer 配置文件
+
+# LLM 配置
+llm:
+  # 默认后端: openai, claude, local
+  backend: openai
+  
+  # OpenAI 配置
+  openai:
+    model: gpt-4-turbo-preview
+    temperature: 0.1
+    max_tokens: 4096
+    # api_key 从环境变量 OPENAI_API_KEY 读取
+  
+  # Claude 配置（可选）
+  claude:
+    model: claude-3-opus-20240229
+    temperature: 0.1
+    max_tokens: 4096
+  
+  # 本地模型配置（可选）
+  local:
+    model_path: ""
+    device: "cuda"
+
+# 数据处理配置
+data:
+  # 流式解析配置
+  streaming:
+    enabled: true
+    # 环境变量 DISABLE_STREAMING_READER=1 可禁用
+  
+  # 内存限制（MB）
+  max_memory_mb: 2048
+  
+  # 优先使用 DB 格式
+  prefer_db: true
+
+# 分析配置
+analysis:
+  # 默认分析的 Step 数量
+  default_steps: 5
+  
+  # Overlap 计算
+  overlap:
+    enabled: true
+  
+  # 慢卡检测
+  slow_rank:
+    enabled: true
+    threshold: 3  # 三倍标准差阈值
+  
+  # Bubble 分析
+  bubble:
+    enabled: true
+
+# 报告配置
+report:
+  # 输出格式: markdown, html, json
+  format: markdown
+  
+  # 输出目录
+  output_dir: ./analysis_output
+  
+  # 是否包含代码示例
+  include_code_examples: true
+
+# 日志配置
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

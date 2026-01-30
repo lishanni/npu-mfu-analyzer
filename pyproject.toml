@@ -1,0 +1,90 @@
+[project]
+name = "npu-mfu-analyzer"
+version = "0.1.0"
+description = "昇腾 NPU 大模型训练 MFU 智能分析工具"
+readme = "README.md"
+requires-python = ">=3.9,<3.12"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "NPU MFU Analyzer Team"}
+]
+
+dependencies = [
+    "numpy>=1.24.0,<=1.26.4",
+    "pandas>=2.0.0,<=2.3.2",
+    "ijson>=3.2.0",
+    "sqlalchemy>=2.0.0",
+    "PyYAML>=6.0",
+    "pydantic>=2.0.0",
+    "tqdm>=4.65.0",
+    "click>=8.0.0",
+    "tabulate>=0.9.0",
+    "prettytable>=3.0.0",
+    "networkx>=3.0",
+    "jinja2>=3.0.0",
+    "xlsxwriter>=3.0.6",
+    "psutil>=5.9.0",
+    "openai>=1.0.0",
+    "tiktoken>=0.5.0",
+]
+
+[project.optional-dependencies]
+web = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "python-multipart>=0.0.6",
+    "websockets>=12.0",
+    "aiofiles>=23.0.0",
+]
+local-llm = [
+    "transformers>=4.35.0",
+    "torch>=2.0.0",
+    "accelerate>=0.25.0",
+]
+langchain = [
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+]
+claude = [
+    "anthropic>=0.18.0",
+]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+all = [
+    "npu-mfu-analyzer[web,local-llm,langchain,claude,dev]",
+]
+
+[project.scripts]
+npu-analyzer = "src.cli.main:cli"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

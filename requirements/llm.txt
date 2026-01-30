@@ -1,0 +1,13 @@
+# NPU MFU Analyzer - LLM 依赖
+
+# OpenAI 兼容 API
+openai>=1.0.0
+httpx>=0.25.0
+tiktoken>=0.5.0
+
+# Anthropic Claude（可选）
+# anthropic>=0.18.0
+
+# LangChain（可选）
+# langchain>=0.1.0
+# langchain-openai>=0.0.5
