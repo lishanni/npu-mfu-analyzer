@@ -164,9 +164,12 @@ class DataSummarizer:
             summary.avg_comm_time = step_trace.get("communication", [0]).mean()
             summary.avg_free_time = step_trace.get("free", [0]).mean()
             
-            # 计算 step 时间
+            # 计算 step 时间（避免链式赋值，兼容 pandas 3.0 Copy-on-Write）
             if "computing" in step_trace.columns and "communication" in step_trace.columns:
-                step_trace["step_time"] = step_trace["computing"] + step_trace["communication"] + step_trace.get("free", 0)
+                free_col = step_trace["free"] if "free" in step_trace.columns else 0
+                step_trace = step_trace.assign(
+                    step_time=step_trace["computing"] + step_trace["communication"] + free_col
+                )
                 summary.avg_step_time = step_trace["step_time"].mean()
             
             # Overlap 指标
@@ -187,13 +190,15 @@ class DataSummarizer:
                     if avg_stage > 0:
                         summary.bubble_ratio = (summary.avg_bubble_time / avg_stage) * 100
             
-            # 采样 Steps
+            # 采样 Steps（step 可能为空/NaN，如 CSV 中 Step 列为空）
             sample_indices = step_trace.index[:max_sample_steps]
             for idx in sample_indices:
                 row = step_trace.iloc[idx]
+                step_val = row.get("step", idx)
+                step_int = int(step_val) if step_val == step_val else idx  # NaN != NaN
                 summary.sample_steps.append(StepMetrics(
-                    step=int(row.get("step", idx)),
-                    computing=float(row.get("computing", 0)),
+                    step=step_int,
+                    computing=float(row.get("computing", 0) or 0),
                     communication=float(row.get("communication", 0)),
                     comm_not_overlapped=float(row.get("communication_not_overlapped", 0)),
                     overlapped=float(row.get("overlapped", 0)),

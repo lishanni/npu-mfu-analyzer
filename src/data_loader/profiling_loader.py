@@ -61,6 +61,21 @@ class ProfilingLoader:
         "**/msprof_*.json",
         "**/communication.json",
     ]
+
+    # Step Trace CSV（msprof-analyze 等工具生成的交付件，DB 无 STEP_TRACE 时降级使用）
+    STEP_TRACE_CSV = "step_trace_time.csv"
+
+    # step_trace_time.csv 列名（小写后）到内部列名的映射
+    _STEP_TRACE_CSV_COLUMN_MAP = {
+        "step": "step",
+        "computing": "computing",
+        "communication": "communication",
+        "communication(not overlapped)": "communication_not_overlapped",
+        "overlapped": "overlapped",
+        "free": "free",
+        "stage": "stage",
+        "bubble": "bubble",
+    }
     
     def __init__(self, profiling_path: str):
         """
@@ -226,31 +241,85 @@ class ProfilingLoader:
         """
         获取 Step Trace 数据
         
+        优先从 DB 的 STEP_TRACE 表读取；若表不存在或为空，则降级从 step_trace_time.csv 读取。
+        
         Returns:
-            DataFrame with columns: step, computing, communication, 
+            DataFrame with columns: step, computing, communication,
                                    communication_not_overlapped, overlapped, free, stage, bubble
         """
         info = self.detect()
-        
+
         if info.data_type == "db":
-            return self._get_step_trace_from_db(rank)
-        else:
-            return pd.DataFrame()  # JSON 格式需要从 trace_view 解析
-    
+            df = self._get_step_trace_from_db(rank)
+            if not df.empty:
+                return df
+            # 降级：DB 无 STEP_TRACE 时从 step_trace_time.csv 读
+            df = self._get_step_trace_from_csv(rank)
+            if not df.empty:
+                logger.info("STEP_TRACE not in DB, using step_trace_time.csv as fallback")
+            return df
+        return pd.DataFrame()  # JSON 格式需要从 trace_view 解析
+
     def _get_step_trace_from_db(self, rank: Optional[int] = None) -> pd.DataFrame:
         """从 DB 获取 Step Trace"""
         db_path = self._get_db_path(rank)
         if not db_path:
             return pd.DataFrame()
-        
+
         try:
             conn = sqlite3.connect(db_path)
             df = pd.read_sql_query("SELECT * FROM STEP_TRACE", conn)
             conn.close()
             return df
         except Exception as e:
-            logger.error(f"Error reading STEP_TRACE: {e}")
+            logger.debug(f"STEP_TRACE not in DB: {e}")
             return pd.DataFrame()
+
+    def _get_step_trace_from_csv(self, rank: Optional[int] = None) -> pd.DataFrame:
+        """
+        从 step_trace_time.csv 读取 Step Trace（降级数据源）。
+        msprof-analyze 等工具会生成该 CSV，列名如：Step, Computing, Communication(Not Overlapped), Overlapped, Free, Stage, Bubble 等。
+        """
+        candidates = glob.glob(str(self.profiling_path / "**" / self.STEP_TRACE_CSV), recursive=True)
+        if not candidates:
+            return pd.DataFrame()
+
+        # 若指定 rank，优先选含该 rank 的路径（如 ASCEND_PROFILER_OUTPUT/step_trace_time.csv 通常为单卡）
+        csv_path = candidates[0]
+        try:
+            df = pd.read_csv(csv_path)
+        except Exception as e:
+            logger.warning(f"Failed to read {csv_path}: {e}")
+            return pd.DataFrame()
+
+        if df.empty:
+            return df
+
+        # 将 CSV 列名统一为小写并去掉多余空格，再映射到内部列名
+        df = df.rename(columns=lambda c: str(c).strip().lower() if isinstance(c, str) else c)
+
+        # 兼容多种列名写法：Communication(Not Overlapped) / communication(not overlapped)
+        rename_map = {}
+        for col in df.columns:
+            key = col.strip().lower()
+            if key in self._STEP_TRACE_CSV_COLUMN_MAP:
+                rename_map[col] = self._STEP_TRACE_CSV_COLUMN_MAP[key]
+            elif "communication" in key and "not overlapped" in key and "exclude" not in key:
+                rename_map[col] = "communication_not_overlapped"
+            elif "communication" in key and "exclude" in key:
+                pass  # 可选列，不映射
+            elif key == "device_id":
+                pass  # 保留，用于多卡过滤
+            elif key == "preparing":
+                pass  # 可选列
+
+        df = df.rename(columns=rename_map)
+
+        # 若 CSV 有 device_id，且指定了 rank，则过滤
+        if rank is not None and "device_id" in df.columns:
+            df = df[df["device_id"] == rank]
+
+        return df
     
     def get_overlap_events(self, rank: Optional[int] = None) -> Dict[str, List[Dict]]:
         """
