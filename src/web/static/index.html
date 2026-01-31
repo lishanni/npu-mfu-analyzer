@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NPU MFU Analyzer</title>
+    <style>
+        :root {
+            --primary-color: #1a73e8;
+            --success-color: #34a853;
+            --warning-color: #fbbc04;
+            --danger-color: #ea4335;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #202124;
+            --border-color: #dadce0;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), #4285f4);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .card h2 {
+            font-size: 18px;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--primary-color);
+        }
+        
+        .form-group {
+            margin-bottom: 16px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.1);
+        }
+        
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .btn:hover {
+            background: #1557b0;
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: var(--bg-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+        }
+        
+        .btn-secondary:hover {
+            background: #e8e8e8;
+        }
+        
+        .progress-container {
+            margin: 20px 0;
+        }
+        
+        .progress-bar {
+            height: 24px;
+            background: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            border-radius: 12px;
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .status-message {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .status-message.info {
+            background: #e8f0fe;
+            color: var(--primary-color);
+        }
+        
+        .status-message.success {
+            background: #e6f4ea;
+            color: var(--success-color);
+        }
+        
+        .status-message.error {
+            background: #fce8e6;
+            color: var(--danger-color);
+        }
+        
+        .task-list {
+            list-style: none;
+        }
+        
+        .task-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .task-item .status {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .task-item .status.pending { background: #e0e0e0; }
+        .task-item .status.running { background: var(--warning-color); color: black; }
+        .task-item .status.completed { background: var(--success-color); color: white; }
+        .task-item .status.failed { background: var(--danger-color); color: white; }
+        
+        .report-frame {
+            width: 100%;
+            height: 600px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        .tab.active {
+            background: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 NPU MFU Analyzer</h1>
+        <p>昇腾 NPU 大模型训练性能分析工具</p>
+    </div>
+    
+    <div class="container">
+        <!-- 分析表单 -->
+        <div class="card">
+            <h2>📊 开始分析</h2>
+            <form id="analyzeForm">
+                <div class="form-group">
+                    <label for="profilingPath">Profiling 数据路径</label>
+                    <input type="text" id="profilingPath" 
+                           placeholder="/path/to/msprof_xxx_ascend_pt" 
+                           required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="llmBackend">LLM 后端</label>
+                    <select id="llmBackend">
+                        <option value="mock">Mock (测试)</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="claude">Claude</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="outputFormat">报告格式</label>
+                    <select id="outputFormat">
+                        <option value="html">HTML</option>
+                        <option value="markdown">Markdown</option>
+                        <option value="json">JSON</option>
+                    </select>
+                </div>
+                
+                <button type="submit" class="btn" id="analyzeBtn">
+                    🔍 开始分析
+                </button>
+            </form>
+        </div>
+        
+        <!-- 进度显示 -->
+        <div class="card hidden" id="progressCard">
+            <h2>⏳ 分析进度</h2>
+            <div class="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressBar" style="width: 0%">0%</div>
+                </div>
+            </div>
+            <div class="status-message info" id="statusMessage">等待开始...</div>
+        </div>
+        
+        <!-- 报告显示 -->
+        <div class="card hidden" id="reportCard">
+            <h2>📋 分析报告</h2>
+            <div style="margin-bottom: 10px;">
+                <button class="btn btn-secondary" id="downloadBtn">📥 下载报告</button>
+                <button class="btn btn-secondary" id="newAnalysisBtn">🔄 新建分析</button>
+            </div>
+            <iframe id="reportFrame" class="report-frame"></iframe>
+        </div>
+        
+        <!-- 任务列表 -->
+        <div class="card">
+            <h2>📋 历史任务</h2>
+            <ul class="task-list" id="taskList">
+                <li class="task-item">
+                    <span>暂无任务</span>
+                </li>
+            </ul>
+            <button class="btn btn-secondary" id="refreshTasksBtn">🔄 刷新列表</button>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '';  // 当前域名
+        let currentTaskId = null;
+        let ws = null;
+        
+        // 分析表单提交
+        document.getElementById('analyzeForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const profilingPath = document.getElementById('profilingPath').value;
+            const llmBackend = document.getElementById('llmBackend').value;
+            const outputFormat = document.getElementById('outputFormat').value;
+            
+            try {
+                document.getElementById('analyzeBtn').disabled = true;
+                document.getElementById('analyzeBtn').textContent = '分析中...';
+                
+                const response = await fetch(`${API_BASE}/api/analyze`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        profiling_path: profilingPath,
+                        llm_backend: llmBackend,
+                        output_format: outputFormat
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '请求失败');
+                }
+                
+                const data = await response.json();
+                currentTaskId = data.task_id;
+                
+                // 显示进度卡片
+                document.getElementById('progressCard').classList.remove('hidden');
+                document.getElementById('reportCard').classList.add('hidden');
+                
+                // 连接 WebSocket
+                connectWebSocket(currentTaskId);
+                
+            } catch (error) {
+                alert('分析失败: ' + error.message);
+            } finally {
+                document.getElementById('analyzeBtn').disabled = false;
+                document.getElementById('analyzeBtn').textContent = '🔍 开始分析';
+            }
+        });
+        
+        // WebSocket 连接
+        function connectWebSocket(taskId) {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws/${taskId}`);
+            
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'heartbeat' || data.type === 'pong') {
+                    return;
+                }
+                
+                // 更新进度条
+                const progress = data.progress || 0;
+                document.getElementById('progressBar').style.width = `${progress}%`;
+                document.getElementById('progressBar').textContent = `${progress}%`;
+                
+                // 更新状态消息
+                const statusEl = document.getElementById('statusMessage');
+                statusEl.textContent = data.message || '';
+                
+                if (data.status === 'completed') {
+                    statusEl.className = 'status-message success';
+                    showReport(taskId);
+                    ws.close();
+                } else if (data.status === 'failed') {
+                    statusEl.className = 'status-message error';
+                    ws.close();
+                }
+            };
+            
+            ws.onerror = () => {
+                // 降级到轮询
+                pollTaskStatus(taskId);
+            };
+        }
+        
+        // 轮询任务状态（WebSocket 失败时的降级方案）
+        async function pollTaskStatus(taskId) {
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE}/api/tasks/${taskId}`);
+                    const data = await response.json();
+                    
+                    const progress = data.task.progress || 0;
+                    document.getElementById('progressBar').style.width = `${progress}%`;
+                    document.getElementById('progressBar').textContent = `${progress}%`;
+                    document.getElementById('statusMessage').textContent = data.task.message || '';
+                    
+                    if (data.task.status === 'completed') {
+                        clearInterval(interval);
+                        document.getElementById('statusMessage').className = 'status-message success';
+                        showReport(taskId);
+                    } else if (data.task.status === 'failed') {
+                        clearInterval(interval);
+                        document.getElementById('statusMessage').className = 'status-message error';
+                    }
+                } catch (error) {
+                    console.error('Poll error:', error);
+                }
+            }, 2000);
+        }
+        
+        // 显示报告
+        function showReport(taskId) {
+            document.getElementById('reportCard').classList.remove('hidden');
+            document.getElementById('reportFrame').src = `${API_BASE}/api/reports/${taskId}`;
+            
+            document.getElementById('downloadBtn').onclick = () => {
+                window.open(`${API_BASE}/api/reports/${taskId}`, '_blank');
+            };
+        }
+        
+        // 新建分析
+        document.getElementById('newAnalysisBtn').addEventListener('click', () => {
+            document.getElementById('progressCard').classList.add('hidden');
+            document.getElementById('reportCard').classList.add('hidden');
+            document.getElementById('progressBar').style.width = '0%';
+            document.getElementById('progressBar').textContent = '0%';
+            document.getElementById('statusMessage').textContent = '等待开始...';
+            document.getElementById('statusMessage').className = 'status-message info';
+        });
+        
+        // 刷新任务列表
+        document.getElementById('refreshTasksBtn').addEventListener('click', loadTasks);
+        
+        async function loadTasks() {
+            try {
+                const response = await fetch(`${API_BASE}/api/tasks`);
+                const data = await response.json();
+                
+                const taskList = document.getElementById('taskList');
+                
+                if (data.tasks.length === 0) {
+                    taskList.innerHTML = '<li class="task-item"><span>暂无任务</span></li>';
+                    return;
+                }
+                
+                taskList.innerHTML = data.tasks.map(task => `
+                    <li class="task-item">
+                        <div>
+                            <strong>${task.id.substring(0, 8)}...</strong>
+                            <br>
+                            <small>${task.created_at}</small>
+                        </div>
+                        <span class="status ${task.status}">${task.status}</span>
+                    </li>
+                `).join('');
+                
+            } catch (error) {
+                console.error('Load tasks error:', error);
+            }
+        }
+        
+        // 初始加载
+        loadTasks();
+    </script>
+</body>
+</html>

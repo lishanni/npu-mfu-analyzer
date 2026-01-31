@@ -191,5 +191,49 @@ def version():
     click.echo("昇腾 NPU 大模型训练性能分析工具")
 
 
+@cli.command()
+@click.option(
+    "--host", "-h",
+    type=str,
+    default="0.0.0.0",
+    help="监听地址（默认 0.0.0.0）"
+)
+@click.option(
+    "--port", "-p",
+    type=int,
+    default=8000,
+    help="监听端口（默认 8000）"
+)
+@click.option(
+    "--reload",
+    is_flag=True,
+    help="开发模式，自动重载"
+)
+def web(host: str, port: int, reload: bool):
+    """
+    启动 Web 服务
+    
+    启动后访问 http://localhost:8000 使用 Web 界面
+    API 文档: http://localhost:8000/docs
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        click.echo(click.style("❌ 请先安装 web 依赖: pip install fastapi uvicorn", fg="red"))
+        sys.exit(1)
+    
+    click.echo(f"🚀 启动 Web 服务: http://{host}:{port}")
+    click.echo(f"📚 API 文档: http://{host}:{port}/docs")
+    click.echo("按 Ctrl+C 停止服务\n")
+    
+    uvicorn.run(
+        "src.web.app:app",
+        host=host,
+        port=port,
+        reload=reload,
+        log_level="info"
+    )
+
+
 if __name__ == "__main__":
     cli()
