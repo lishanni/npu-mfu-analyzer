@@ -35,6 +35,15 @@ from src.analyzers.comm_splitter import (
     ParallelGroupBuilder,
 )
 
+from src.analyzers.mfu_calculator import (
+    MFUCalculator,
+    MFUMetrics,
+    ChipInfo,
+    OperatorMFU,
+    DataType,
+    OperatorType,
+)
+
 __all__ = [
     # Overlap
     "TimeRange",
@@ -59,4 +68,11 @@ __all__ = [
     "CommSplitResult",
     "ParallelConfig",
     "ParallelGroupBuilder",
+    # MFU
+    "MFUCalculator",
+    "MFUMetrics",
+    "ChipInfo",
+    "OperatorMFU",
+    "DataType",
+    "OperatorType",
 ]
