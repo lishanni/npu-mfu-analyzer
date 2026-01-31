@@ -11,9 +11,15 @@ from dataclasses import dataclass, field
 
 from src.llm.llm_interface import LLMInterface, LLMConfig, LLMFactory, Message
 from src.llm.prompts import ADVISOR_SYSTEM
-from src.agents.base_agent import BaseAgent, AnalysisResult, TimelineAgent, OperatorAgent
+from src.agents.base_agent import BaseAgent, AnalysisResult
+from src.agents.timeline_agent import TimelineAgent
+from src.agents.operator_agent import OperatorAgent
+from src.agents.memory_agent import MemoryAgent
+from src.agents.communication_agent import CommunicationAgent
+from src.agents.advisor_agent import AdvisorAgent
 from src.data_loader.profiling_loader import ProfilingLoader
 from src.data_loader.data_summarizer import DataSummarizer, ProfilingSummary
+from src.report.report_generator import ReportGenerator, ReportFormat
 
 logger = logging.getLogger(__name__)
 
@@ -98,13 +104,21 @@ class Orchestrator:
         """初始化所有 Agent"""
         self.agents["timeline"] = TimelineAgent(self.llm, self.config)
         self.agents["operator"] = OperatorAgent(self.llm, self.config)
-        # 后续添加更多 Agent
-        # self.agents["memory"] = MemoryAgent(self.llm, self.config)
-        # self.agents["communication"] = CommunicationAgent(self.llm, self.config)
+        self.agents["memory"] = MemoryAgent(self.llm, self.config)
+        self.agents["communication"] = CommunicationAgent(self.llm, self.config)
+        
+        # Advisor Agent 单独保存，用于最终综合分析
+        self.advisor = AdvisorAgent(self.llm, self.config)
+        
+        # 报告生成器
+        self.report_generator = ReportGenerator()
     
-    async def run(self) -> AnalysisReport:
+    async def run(self, output_format: ReportFormat = ReportFormat.MARKDOWN) -> AnalysisReport:
         """
         执行完整的分析流程
+        
+        Args:
+            output_format: 报告输出格式
         
         Returns:
             AnalysisReport
@@ -130,10 +144,27 @@ class Orchestrator:
             # 3. 并行执行各 Agent 分析
             agent_results = await self._run_agents(profiling_summary)
             
-            # 4. 整合结果生成最终报告
-            final_report, recommendations = await self._generate_final_report(
-                profiling_summary, agent_results
+            # 4. 使用 Advisor Agent 生成综合分析
+            advisor_result = await self._run_advisor(profiling_summary, agent_results)
+            
+            # 5. 生成最终报告
+            final_report = self.report_generator.generate_from_analysis(
+                profiling_path=self.profiling_path,
+                profiling_summary=profiling_summary,
+                agent_results=agent_results,
+                advisor_report=advisor_result.details.get("advisor_report") if advisor_result.success else None,
+                format=output_format,
             )
+            
+            # 提取建议
+            recommendations = []
+            if advisor_result.success:
+                recommendations = advisor_result.recommendations
+            else:
+                # 从各 Agent 结果中提取建议
+                for name, result in agent_results.items():
+                    if hasattr(result, "recommendations"):
+                        recommendations.extend(result.recommendations[:5])
             
             return AnalysisReport(
                 success=True,
@@ -141,7 +172,7 @@ class Orchestrator:
                 profiling_summary=profiling_summary,
                 agent_results=agent_results,
                 final_report=final_report,
-                recommendations=recommendations,
+                recommendations=recommendations[:20],
             )
             
         except Exception as e:
@@ -149,6 +180,28 @@ class Orchestrator:
             return AnalysisReport(
                 success=False,
                 summary="分析失败",
+                error=str(e)
+            )
+    
+    async def _run_advisor(
+        self, 
+        summary: ProfilingSummary, 
+        agent_results: Dict[str, AnalysisResult]
+    ) -> AnalysisResult:
+        """运行 Advisor Agent 生成综合分析"""
+        try:
+            advisor_data = {
+                "profiling_summary": summary,
+                "agent_results": agent_results,
+            }
+            result = await self.advisor.analyze(advisor_data)
+            return result
+        except Exception as e:
+            logger.error(f"Advisor analysis failed: {e}")
+            return AnalysisResult(
+                agent_name="AdvisorAgent",
+                success=False,
+                summary="综合分析失败",
                 error=str(e)
             )
     
