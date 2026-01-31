@@ -39,9 +39,9 @@ def cli():
 )
 @click.option(
     "--backend", "-b",
-    type=click.Choice(["openai", "claude", "mock"]),
+    type=click.Choice(["openai", "claude", "ollama", "deepseek", "mock"]),
     default="openai",
-    help="LLM 后端（默认 openai）"
+    help="LLM 后端: openai/claude/ollama/deepseek/mock"
 )
 @click.option(
     "--model", "-m",

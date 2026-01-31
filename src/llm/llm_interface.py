@@ -226,6 +226,137 @@ class MockBackend(LLMInterface):
         )
 
 
+class OllamaBackend(LLMInterface):
+    """
+    Ollama 本地 LLM 后端
+    
+    Ollama 是免费的本地 LLM 服务，支持 Llama, Qwen, DeepSeek 等模型。
+    安装: https://ollama.ai
+    
+    使用方法:
+        1. 安装 Ollama: brew install ollama (Mac) 或下载安装包
+        2. 启动服务: ollama serve
+        3. 下载模型: ollama pull qwen2.5:7b
+        4. 配置: backend=ollama, model=qwen2.5:7b
+    """
+    
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        # Ollama 默认地址
+        self.base_url = config.base_url or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        # 默认模型
+        if config.model == "gpt-4-turbo-preview":
+            config.model = "qwen2.5:7b"  # 默认使用 Qwen
+    
+    async def complete(
+        self, 
+        messages: List[Message],
+        **kwargs
+    ) -> LLMResponse:
+        """调用 Ollama API"""
+        import aiohttp
+        
+        url = f"{self.base_url}/api/chat"
+        
+        payload = {
+            "model": kwargs.get("model", self.config.model),
+            "messages": [m.to_dict() for m in messages],
+            "stream": False,
+            "options": {
+                "temperature": kwargs.get("temperature", self.config.temperature),
+            }
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"Ollama API error: {response.status} - {error_text}")
+                    
+                    data = await response.json()
+                    
+                    return LLMResponse(
+                        content=data.get("message", {}).get("content", ""),
+                        model=data.get("model", self.config.model),
+                        usage={
+                            "prompt_tokens": data.get("prompt_eval_count", 0),
+                            "completion_tokens": data.get("eval_count", 0),
+                        },
+                        raw_response=data,
+                    )
+                    
+        except aiohttp.ClientError as e:
+            logger.error(f"Ollama connection error: {e}")
+            raise Exception(f"无法连接到 Ollama 服务 ({self.base_url})。请确保 Ollama 已启动: ollama serve")
+        except Exception as e:
+            logger.error(f"Ollama API error: {e}")
+            raise
+
+
+class DeepSeekBackend(LLMInterface):
+    """
+    DeepSeek API 后端
+    
+    DeepSeek 提供高性价比的 API 服务。
+    注册: https://platform.deepseek.com
+    
+    使用方法:
+        export DEEPSEEK_API_KEY="your-key"
+        backend=deepseek
+    """
+    
+    def __init__(self, config: LLMConfig):
+        super().__init__(config)
+        self.api_key = config.api_key or os.getenv("DEEPSEEK_API_KEY")
+        self.base_url = config.base_url or "https://api.deepseek.com/v1"
+        # 默认模型
+        if config.model == "gpt-4-turbo-preview":
+            config.model = "deepseek-chat"
+        self._client = None
+    
+    @property
+    def client(self):
+        if self._client is None:
+            try:
+                from openai import AsyncOpenAI
+                self._client = AsyncOpenAI(
+                    api_key=self.api_key,
+                    base_url=self.base_url
+                )
+            except ImportError:
+                raise ImportError("openai package not installed. Run: pip install openai")
+        return self._client
+    
+    async def complete(
+        self, 
+        messages: List[Message],
+        **kwargs
+    ) -> LLMResponse:
+        """调用 DeepSeek API（OpenAI 兼容）"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=kwargs.get("model", self.config.model),
+                messages=[m.to_dict() for m in messages],
+                temperature=kwargs.get("temperature", self.config.temperature),
+                max_tokens=kwargs.get("max_tokens", self.config.max_tokens),
+            )
+            
+            return LLMResponse(
+                content=response.choices[0].message.content,
+                model=response.model,
+                usage={
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "completion_tokens": response.usage.completion_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                },
+                raw_response=response,
+            )
+        except Exception as e:
+            logger.error(f"DeepSeek API error: {e}")
+            raise
+
+
 class LLMFactory:
     """LLM 工厂类"""
     
@@ -233,6 +364,8 @@ class LLMFactory:
         "openai": OpenAIBackend,
         "claude": ClaudeBackend,
         "mock": MockBackend,
+        "ollama": OllamaBackend,
+        "deepseek": DeepSeekBackend,
     }
     
     @classmethod
