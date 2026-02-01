@@ -44,6 +44,12 @@ from src.analyzers.mfu_calculator import (
     OperatorType,
 )
 
+from src.analyzers.history_comparator import (
+    HistoryComparator,
+    ProfilingSnapshot,
+    ComparisonResult,
+)
+
 __all__ = [
     # Overlap
     "TimeRange",
@@ -75,4 +81,8 @@ __all__ = [
     "OperatorMFU",
     "DataType",
     "OperatorType",
+    # History Comparison
+    "HistoryComparator",
+    "ProfilingSnapshot",
+    "ComparisonResult",
 ]
