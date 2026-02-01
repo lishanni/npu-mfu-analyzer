@@ -23,6 +23,16 @@ from src.topology.collective_profiler import (
     profile_collective_ops_from_loader,
 )
 
+from src.topology.hccs_ring_parser import (
+    HCCSTopologyParser,
+    HCCSTopology,
+    HCCSRing,
+    HCCSLinkType,
+    HCCSCommAnalysis,
+    parse_hccs_topology_from_loader,
+    analyze_hccs_from_loader,
+)
+
 __all__ = [
     # Topology Analyzer
     "TopologyAnalyzer",
@@ -40,4 +50,13 @@ __all__ = [
     "CollectiveOpType",
     "CollectiveAlgorithm",
     "profile_collective_ops_from_loader",
+    
+    # HCCS Ring Parser
+    "HCCSTopologyParser",
+    "HCCSTopology",
+    "HCCSRing",
+    "HCCSLinkType",
+    "HCCSCommAnalysis",
+    "parse_hccs_topology_from_loader",
+    "analyze_hccs_from_loader",
 ]

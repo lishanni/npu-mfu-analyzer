@@ -26,6 +26,10 @@ from src.analyzers.slow_rank_detector import (
 from src.analyzers.bubble_analyzer import (
     BubbleAnalyzer,
     BubbleMetrics,
+    PPScheduleType,
+    PPScheduleAnalysis,
+    BubbleBreakdown,
+    RecomputationAnalysis,
 )
 
 from src.analyzers.comm_splitter import (
@@ -69,6 +73,10 @@ __all__ = [
     # Bubble
     "BubbleAnalyzer",
     "BubbleMetrics",
+    "PPScheduleType",
+    "PPScheduleAnalysis",
+    "BubbleBreakdown",
+    "RecomputationAnalysis",
     # Communication Split
     "CommunicationSplitter",
     "CommSplitResult",
