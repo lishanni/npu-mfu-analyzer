@@ -1,0 +1,63 @@
+# Atlas 800T A2 / Atlas 900 A2 (Ascend 910B 系列) 芯片规格
+# 参考: 华为昇腾 Atlas 系列产品规格
+
+chips:
+  - name: "Atlas 800T A2 910B"
+    variant: "280T"
+    aicore_count: 20
+    aicore_freq_mhz: 1800
+    cube_ops_per_cycle: 4096    # FP16: 16x16x16x2
+    vector_ops_per_cycle: 256
+    hbm_bandwidth_gbps: 1600    # 1.6 TB/s
+    hbm_capacity_gb: 64
+    hccs_bandwidth_gbps: 56     # per link
+    hccs_links: 8
+    pcie_bandwidth_gbps: 64     # Gen5 x16
+    l2_cache_mb: 192
+    peak_tflops_fp16: 280
+    soc_name_patterns: ["Ascend910B", "910B", "Atlas800T"]
+
+  - name: "Atlas 800T A2 910B"
+    variant: "313T"
+    aicore_count: 24
+    aicore_freq_mhz: 1800
+    cube_ops_per_cycle: 4096
+    vector_ops_per_cycle: 256
+    hbm_bandwidth_gbps: 1600
+    hbm_capacity_gb: 64
+    hccs_bandwidth_gbps: 56
+    hccs_links: 8
+    pcie_bandwidth_gbps: 64
+    l2_cache_mb: 192
+    peak_tflops_fp16: 313
+    soc_name_patterns: ["910B3"]
+
+  - name: "Atlas 800T A2 910B"
+    variant: "376T"
+    aicore_count: 32
+    aicore_freq_mhz: 1800
+    cube_ops_per_cycle: 4096
+    vector_ops_per_cycle: 256
+    hbm_bandwidth_gbps: 1600
+    hbm_capacity_gb: 64
+    hccs_bandwidth_gbps: 56
+    hccs_links: 8
+    pcie_bandwidth_gbps: 64
+    l2_cache_mb: 192
+    peak_tflops_fp16: 376
+    soc_name_patterns: ["910B4", "910B5"]
+
+  - name: "Atlas 900 A2 910B Pro"
+    variant: "default"
+    aicore_count: 40
+    aicore_freq_mhz: 2000
+    cube_ops_per_cycle: 4096
+    vector_ops_per_cycle: 256
+    hbm_bandwidth_gbps: 2000
+    hbm_capacity_gb: 80
+    hccs_bandwidth_gbps: 64
+    hccs_links: 12
+    pcie_bandwidth_gbps: 64
+    l2_cache_mb: 256
+    peak_tflops_fp16: 500
+    soc_name_patterns: ["910BPro", "910B-Pro"]

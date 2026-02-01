@@ -1,0 +1,18 @@
+# Atlas 300I (Ascend 310P 系列) 推理卡规格
+# 参考: 华为昇腾 Atlas 300I 产品规格
+
+chips:
+  - name: "Atlas 300I 310P"
+    variant: "default"
+    aicore_count: 24
+    aicore_freq_mhz: 1300
+    cube_ops_per_cycle: 4096
+    vector_ops_per_cycle: 256
+    hbm_bandwidth_gbps: 640     # 640 GB/s
+    hbm_capacity_gb: 32
+    hccs_bandwidth_gbps: 0      # 推理卡通常单卡
+    hccs_links: 0
+    pcie_bandwidth_gbps: 32     # Gen4 x16
+    l2_cache_mb: 64
+    peak_tflops_fp16: 120
+    soc_name_patterns: ["Ascend310P", "310P", "Atlas300I"]
