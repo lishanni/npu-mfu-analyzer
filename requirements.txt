@@ -1,3 +1,0 @@
-# NPU MFU Analyzer - 完整依赖
--r requirements/base.txt
--r requirements/llm.txt

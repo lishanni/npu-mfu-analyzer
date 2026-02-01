@@ -1,14 +1,19 @@
 """
-Pattern Matcher 功能测试脚本
+跨框架模式识别 - 集成测试
 
-验证 Phase 6.2 的跨框架模式识别功能
+验证以下功能模块：
+- FrameworkDetector: 训练框架检测 (Megatron/DeepSpeed/FSDP/MindSpeed)
+- ParallelDetector: 并行策略检测 (TP/PP/DP/ZeRO/FSDP/CP/EP)
+- ModelDetector: 模型结构检测 (layers/hidden_size/attention_heads)
+- UniversalPatternMatcher: 统一模式匹配入口
 """
 
 import sys
 from pathlib import Path
 
-# 添加项目路径
-sys.path.insert(0, str(Path(__file__).parent))
+# 添加项目路径（conftest.py 会自动处理，此处作为独立运行的备份）
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.pattern_matcher import (
     FrameworkDetector,

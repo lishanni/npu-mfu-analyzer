@@ -1,15 +1,19 @@
 """
-Phase 7 功能测试脚本
+集群拓扑与通信瓶颈诊断 - 集成测试
 
-验证拓扑分析、集合通信分析和抖动检测功能
+验证以下功能模块：
+- TopologyAnalyzer: 物理拓扑分析、带宽利用率、慢链路识别
+- CollectiveProfiler: 集合通信分析、带宽效率、算法推荐
+- JitterDetector: 计算/通信/对齐抖动检测、慢 rank 识别
 """
 
 import sys
 from pathlib import Path
 import numpy as np
 
-# 添加项目路径
-sys.path.insert(0, str(Path(__file__).parent))
+# 添加项目路径（conftest.py 会自动处理，此处作为独立运行的备份）
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.topology import (
     TopologyAnalyzer,
