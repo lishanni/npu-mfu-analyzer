@@ -2,85 +2,437 @@
 
 ## 概述
 
-NPU MFU Analyzer 是一款用于分析和优化昇腾 NPU 上大模型训练性能的工具。
+NPU MFU Analyzer 是一款用于分析和优化昇腾 NPU 上大模型训练性能的工具。采用 Multi-Agent + 专家技能的混合架构，结合 Roofline 性能建模，提供专业的性能分析和优化建议。
 
-## 系统架构
+## 设计理念
+
+### 1. 分层架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      NPU MFU Analyzer                           │
+│                     Presentation Layer                          │
+│                   CLI / Web / Python API                        │
 ├─────────────────────────────────────────────────────────────────┤
-│  CLI / Web Interface                                            │
+│                      Agent Layer                                │
+│              Multi-Agent Orchestration                          │
 ├─────────────────────────────────────────────────────────────────┤
-│                    Multi-Agent Orchestrator                     │
-│  ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
-│  │ Timeline │ Operator │  Memory  │  Comm    │ Advisor  │      │
-│  │  Agent   │  Agent   │  Agent   │  Agent   │  Agent   │      │
-│  └──────────┴──────────┴──────────┴──────────┴──────────┘      │
+│                      Skill Layer                                │
+│           Python Skills + Prompt Skills                         │
 ├─────────────────────────────────────────────────────────────────┤
-│                      Analysis Layer                             │
-│  ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
-│  │ Overlap  │  Bubble  │  MFU     │  SlowRank│  Comm    │      │
-│  │Calculator│ Analyzer │Calculator│ Detector │ Splitter │      │
-│  └──────────┴──────────┴──────────┴──────────┴──────────┘      │
+│                     Analysis Layer                              │
+│        Analyzers + Topology + Roofline + What-if                │
 ├─────────────────────────────────────────────────────────────────┤
-│                      Data Layer                                 │
-│  ┌──────────┬──────────┬──────────┬──────────┬──────────┐      │
-│  │Profiling │  Stream  │ Hardware │ Pattern  │ Topology │      │
-│  │ Loader   │  Parser  │ Registry │ Matcher  │ Analyzer │      │
-│  └──────────┴──────────┴──────────┴──────────┴──────────┘      │
+│                       Data Layer                                │
+│     Profiling Loader + Hardware Registry + Pattern Matcher      │
 ├─────────────────────────────────────────────────────────────────┤
-│                      LLM Backend                                │
-│  ┌──────────┬──────────┬──────────┐                            │
-│  │  Ollama  │ DeepSeek │   Mock   │                            │
-│  │ Backend  │ Backend  │ Backend  │                            │
-│  └──────────┴──────────┴──────────┘                            │
+│                     Infrastructure                              │
+│               LLM Backend + Report Generator                    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## 模块说明
+### 2. 核心设计原则
 
-### 1. Data Layer (数据层)
+| 原则 | 说明 |
+|------|------|
+| **精确 + 智能** | Python 技能精确计算，LLM 智能推理，各司其职 |
+| **硬件感知** | 所有分析基于真实硬件规格，避免泛化建议 |
+| **数据驱动** | 每个结论必须有数据支撑，可验证可复现 |
+| **模块化** | 独立模块可单独使用，便于扩展和维护 |
 
-- **ProfilingLoader**: 加载 msprof 生成的 profiling 数据（.db, .json）
-- **StreamParser**: 使用 ijson 流式解析大型 trace_view.json
-- **HardwareRegistry**: NPU 硬件规格数据库 (Atlas A2, 300I 等)
-- **PatternMatcher**: 跨框架模式识别 (Megatron/DeepSpeed/FSDP)
-- **TopologyAnalyzer**: 集群物理拓扑分析
+## 模块详解
 
-### 2. Analysis Layer (分析层)
+### 1. Data Layer（数据层）
 
-- **OverlapCalculator**: 计算/通信重叠率分析
-- **BubbleAnalyzer**: PP Bubble Time 分析
-- **MFUCalculator**: Model FLOPS Utilization 计算
-- **SlowRankDetector**: 慢卡检测 (Dixon's Q / 三 sigma)
-- **CommSplitter**: TP/DP/PP/CP/EP 通信拆分
+#### ProfilingLoader
 
-### 3. Agent Layer (代理层)
+负责加载 msprof 生成的 profiling 数据：
 
-- **TimelineAgent**: Timeline 分析 (HostFree, Device Latency)
-- **OperatorAgent**: 算子性能分析
-- **MemoryAgent**: 内存使用分析
-- **CommunicationAgent**: 通信性能分析
-- **AdvisorAgent**: 综合优化建议
+```python
+class ProfilingLoader:
+    def __init__(self, profiling_path: Path):
+        self.path = profiling_path
+        self.db_path = self._find_db()
+        self.json_path = self._find_json()
+    
+    def get_step_trace(self) -> pd.DataFrame:
+        """获取 Step Trace 数据，支持 DB 和 CSV 降级"""
+    
+    def get_timeline_events(self) -> List[Dict]:
+        """获取 Timeline 事件，使用 ijson 流式解析"""
+    
+    def get_operator_data(self) -> pd.DataFrame:
+        """获取算子数据"""
+    
+    def get_communication_data(self) -> pd.DataFrame:
+        """获取通信数据"""
+```
 
-### 4. LLM Backend (大模型后端)
+**支持的数据源优先级**：
+1. SQLite DB（推荐，支持索引查询）
+2. JSON（使用 ijson 流式解析大文件）
+3. CSV（降级方案）
 
-- **OllamaBackend**: 本地 Ollama 部署
-- **DeepSeekBackend**: DeepSeek API
-- **MockBackend**: 测试用模拟后端
+#### HardwareRegistry
+
+NPU 硬件规格数据库：
+
+```python
+@dataclass
+class NPUSpec:
+    chip_name: str           # Atlas A2
+    variant: str             # 280T/313T/376T
+    aicore_count: int        # 24
+    aicore_frequency_mhz: int
+    fp16_tflops: float       # 280
+    bf16_tflops: float       # 280
+    fp32_tflops: float       # 140
+    hbm_bandwidth: float     # 1500 GB/s
+    hccs_bandwidth: float    # 56 GB/s
+    l2_cache_mb: float       # 192
+```
+
+**支持的硬件**：
+- Atlas A2 系列：280T、313T、376T
+- Atlas 300I：310P
+
+#### PatternMatcher
+
+跨框架模式识别：
+
+```
+输入: 算子名称、通信组名称、算子序列
+  ↓
+FrameworkDetector → 识别框架 (Megatron/DeepSpeed/FSDP/MindSpeed)
+  ↓
+ParallelDetector → 识别并行策略 (TP/PP/DP/ZeRO/FSDP/CP/EP)
+  ↓
+ModelDetector → 推断模型结构 (layers/hidden_size/heads)
+  ↓
+输出: UniversalPattern
+```
+
+### 2. Analysis Layer（分析层）
+
+#### 核心分析器
+
+| 分析器 | 功能 | 算法 |
+|--------|------|------|
+| **OverlapCalculator** | 计算/通信重叠分析 | 时间区间交集计算 |
+| **SlowRankDetector** | 慢卡检测 | Dixon's Q + 三 sigma |
+| **BubbleAnalyzer** | PP Bubble 分析 | Stage 间隙时间统计 |
+| **CommSplitter** | 通信拆分 | 组名/算子类型匹配 |
+| **MFUCalculator** | MFU 计算 | FLOPS / (Peak × Time) |
+
+#### TopologyAnalyzer
+
+集群物理拓扑分析：
+
+```python
+class TopologyAnalyzer:
+    def build_topology(self) -> TopologyInfo:
+        """构建物理拓扑"""
+        # 识别节点内（HCCS）和节点间（RDMA）链路
+        # 计算 rank 到物理位置的映射
+    
+    def analyze_bandwidth(self, comm_events) -> TopologyMetrics:
+        """分析带宽利用率"""
+        # 计算节点内/节点间实测带宽
+        # 对比理论带宽，识别瓶颈
+```
+
+#### CollectiveProfiler
+
+集合通信分析：
+
+```python
+class CollectiveProfiler:
+    def analyze(self, ops: List[CollectiveOpStats]) -> CollectiveAnalysis:
+        """分析集合操作效率"""
+        # 计算算法带宽（考虑 Ring/Tree 系数）
+        # 计算带宽效率
+        # 识别瓶颈操作
+    
+    def get_optimal_algorithm(self, data_size: int, group_size: int) -> str:
+        """推荐最优算法"""
+        # 小数据量 → Tree
+        # 大数据量 → Ring
+```
+
+#### RooflineModeler
+
+性能天花板分析：
+
+```
+性能 (TFLOPS)
+     ^
+     │           ┌─────────────── 计算天花板 (Peak TFLOPS)
+     │         ╱ │
+     │       ╱   │
+     │     ╱     │  
+     │   ╱ 内存  │ 计算
+     │ ╱  受限   │ 受限
+     └───────────┼──────────────> 计算强度 (FLOP/Byte)
+              脊点
+```
+
+**关键公式**：
+- 脊点 = Peak TFLOPS × 1000 / HBM Bandwidth (GB/s)
+- 内存天花板 = HBM Bandwidth × 计算强度 / 1000
+- 实际天花板 = min(计算天花板, 内存天花板)
+
+### 3. Agent Layer（代理层）
+
+#### Multi-Agent 架构
+
+```
+                    ┌─────────────┐
+                    │ Orchestrator│
+                    └──────┬──────┘
+           ┌───────────────┼───────────────┐
+           ↓               ↓               ↓
+    ┌──────────────┐┌──────────────┐┌──────────────┐
+    │TimelineAgent ││OperatorAgent ││ MemoryAgent  │
+    └──────┬───────┘└──────┬───────┘└──────┬───────┘
+           │               │               │
+           ↓               ↓               ↓
+    ┌──────────────┐┌──────────────┐┌──────────────┐
+    │ CommAgent    ││ JitterAgent  ││ AdvisorAgent │
+    └──────┬───────┘└──────┬───────┘└──────┬───────┘
+           │               │               │
+           └───────────────┴───────────────┘
+                           ↓
+                    ┌─────────────┐
+                    │   Report    │
+                    └─────────────┘
+```
+
+#### Agent 协作流程
+
+1. **Orchestrator** 初始化分析任务
+2. **并行执行**：Timeline/Operator/Memory/Comm/Jitter Agent
+3. **汇总阶段**：AdvisorAgent 综合各 Agent 结果
+4. **报告生成**：生成 Markdown/HTML/Excel 报告
+
+### 4. Skill Layer（技能层）
+
+#### 混合技能架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    LLM Agent                                │
+│              (决策 + 推理 + 表达)                           │
+├─────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────┐    ┌─────────────────────┐        │
+│  │   Prompt Skills     │    │   Python Skills     │        │
+│  │   (推理指导)        │    │   (精确计算)        │        │
+│  │                     │    │                     │        │
+│  │ 输入: 场景描述      │    │ 输入: 数值数据      │        │
+│  │ 输出: 指导文本      │    │ 输出: 计算结果      │        │
+│  │                     │    │                     │        │
+│  │ 用途:              │    │ 用途:              │        │
+│  │ • 分析流程指导      │    │ • MFU 计算         │        │
+│  │ • 报告格式规范      │    │ • 带宽效率计算      │        │
+│  │ • 优化策略建议      │    │ • 慢卡检测         │        │
+│  └─────────────────────┘    └─────────────────────┘        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Python Skills 列表
+
+| 技能 | 分类 | 输入 | 输出 |
+|------|------|------|------|
+| `calculate_mfu` | Compute | model_flops, step_time, peak_tflops | MFU%, 效率等级 |
+| `estimate_model_flops` | Compute | params, batch, seq_len | FLOPS 估算 |
+| `check_bandwidth_efficiency` | Comm | measured_bw, theoretical_bw | 效率%, 瓶颈判断 |
+| `analyze_collective_ops` | Comm | op_type, data_size, duration | 带宽效率 |
+| `check_overlap_ratio` | Comm | compute_time, comm_time, overlap | 掩盖率% |
+| `verify_overlap_strategy` | Opt | overlap_ratio, parallel_strategy | 策略建议 |
+| `detect_compute_jitter` | Diag | durations | CV%, 异常值 |
+| `detect_comm_jitter` | Diag | durations | CV%, 异常值 |
+| `analyze_cross_rank_jitter` | Diag | rank_durations | 方差, 慢 rank |
+| `detect_slow_rank` | Diag | rank_times | 慢卡列表 |
+
+#### Prompt Skills 列表
+
+| 技能 | 用途 | 模板变量 |
+|------|------|---------|
+| `diagnosis_flow` | 性能诊断流程 | target_mfu |
+| `report_format` | 报告格式规范 | - |
+| `optimization_strategy` | 优化策略库 | scenario, specific_advice |
+| `expert_reasoning` | 专家推理模式 | problem, available_skills |
+
+### 5. What-if Simulator
+
+假设场景模拟器：
+
+```python
+class WhatIfSimulator:
+    def simulate_parallel_change(self, tp, pp, dp) -> WhatIfScenario:
+        """模拟并行配置变化"""
+        # 考虑 TP 通信开销增加
+        # 考虑 PP Bubble 时间
+        # 考虑 DP AllReduce 量
+    
+    def simulate_hardware_upgrade(self, new_hardware) -> WhatIfScenario:
+        """模拟硬件升级"""
+        # 计算算力提升比
+        # 计算带宽提升比
+    
+    def simulate_optimization(self, opt_type) -> WhatIfScenario:
+        """模拟优化措施"""
+        # 梯度累积：通信频率降低
+        # 掩盖优化：暴露时间减少
+        # 算子融合：Launch 开销降低
+```
 
 ## 数据流
 
+### 完整分析流程
+
 ```
-msprof 采集 → Profiling 数据 → ProfilingLoader → 各 Agent 分析 → AdvisorAgent 汇总 → 报告生成
+msprof 采集
+    ↓
+Profiling 数据 (.db / .json / .csv)
+    ↓
+┌─────────────────────────────────────┐
+│           ProfilingLoader           │
+│  • 自动检测数据格式                  │
+│  • 流式解析大文件                    │
+│  • 数据摘要化                        │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│      Hardware + Pattern Detection    │
+│  • 硬件规格检测/加载                 │
+│  • 框架/并行策略识别                 │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│          Multi-Agent Analysis        │
+│  • Timeline/Operator/Memory/Comm    │
+│  • 调用 Skill Engine 执行精确计算    │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│         Roofline + What-if          │
+│  • 理论天花板分析                    │
+│  • 优化场景预测                      │
+└─────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────┐
+│            Report Generation         │
+│  • Markdown / HTML / Excel          │
+└─────────────────────────────────────┘
 ```
 
-## 支持的硬件
+## 扩展指南
 
-| 型号 | 算力 | HBM 带宽 | HCCS 带宽 |
-|------|------|---------|----------|
-| Atlas A2 (280T) | 280 TFLOPS FP16 | 1.5 TB/s | 56 GB/s |
-| Atlas A2 (313T) | 313 TFLOPS FP16 | 1.8 TB/s | 56 GB/s |
-| Atlas A2 (376T) | 376 TFLOPS FP16 | 2.0 TB/s | 56 GB/s |
-| Atlas 300I | 22 TFLOPS FP16 | 68 GB/s | - |
+### 添加新的 Python Skill
+
+```python
+from src.skills import BaseSkill, SkillMetadata, SkillCategory, SkillResult
+
+class MyNewSkill(BaseSkill):
+    @property
+    def metadata(self) -> SkillMetadata:
+        return SkillMetadata(
+            name="my_new_skill",
+            display_name="我的新技能",
+            description="技能描述",
+            category=SkillCategory.DIAGNOSIS,
+            inputs=[...],
+            outputs=[...],
+        )
+    
+    def execute(self, **kwargs) -> SkillResult:
+        # 实现计算逻辑
+        return SkillResult(
+            skill_name=self.metadata.name,
+            success=True,
+            data={...},
+            suggestions=[...],
+        )
+```
+
+### 添加新的硬件规格
+
+在 `src/hardware/specs/` 目录下创建 YAML 文件：
+
+```yaml
+# new_hardware.yaml
+chip_name: "New Hardware"
+variants:
+  - name: "Variant A"
+    aicore_count: 32
+    fp16_tflops: 400
+    hbm_bandwidth: 2000
+    ...
+```
+
+### 添加新的 Agent
+
+```python
+from src.agents.base_agent import BaseAgent, AnalysisResult
+
+class MyNewAgent(BaseAgent):
+    @property
+    def name(self) -> str:
+        return "MyNewAgent"
+    
+    async def analyze(self, data: Dict) -> AnalysisResult:
+        # 实现分析逻辑
+        return AnalysisResult(
+            agent_name=self.name,
+            success=True,
+            summary="分析摘要",
+            details={...},
+            recommendations=[...],
+        )
+```
+
+## 性能考量
+
+### 大文件处理
+
+- **流式解析**：使用 ijson 处理 GB 级 trace_view.json
+- **数据摘要**：GB 级原始数据 → KB 级统计摘要
+- **内存预算**：5GB JSON 文件，内存占用 < 2GB
+
+### 并行处理
+
+- **Agent 并行**：多个 Agent 并行分析
+- **Skill 批量**：支持 Skill 链式执行
+- **异步 I/O**：Web 服务使用异步处理
+
+## 测试策略
+
+### 测试分层
+
+```
+tests/
+├── unit/           # 单元测试
+│   ├── test_analyzers.py
+│   ├── test_agents.py
+│   └── test_data_loader.py
+└── integration/    # 集成测试
+    ├── test_pattern_recognition.py
+    ├── test_topology_and_jitter.py
+    ├── test_skill_engine.py
+    └── test_roofline_whatif.py
+```
+
+### 运行测试
+
+```bash
+# 全部测试
+pytest tests/ -v
+
+# 单元测试
+pytest tests/unit/ -v
+
+# 集成测试
+pytest tests/integration/ -v
+
+# 特定模块
+python tests/integration/test_skill_engine.py
+```
