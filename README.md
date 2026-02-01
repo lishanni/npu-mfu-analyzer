@@ -228,7 +228,15 @@ print(f"推荐方案: {result.best_scenario.name}")
 
 ## 快速开始
 
+### 环境要求
+
+- Python >= 3.9, < 3.13
+- pip >= 21.0
+- 操作系统: Linux / macOS / Windows 11
+
 ### 安装
+
+#### Linux / macOS
 
 ```bash
 # 克隆仓库
@@ -246,6 +254,69 @@ pip install -e ".[all]"
 pip install -e .              # 基础功能
 pip install -e ".[web]"       # Web 界面
 pip install -e ".[llm]"       # LLM 后端
+```
+
+#### Windows 11 (PowerShell)
+
+```powershell
+# 克隆仓库
+git clone <repo-url>
+cd npu-mfu-analyzer
+
+# 创建虚拟环境
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 如果遇到执行策略限制，先运行:
+# Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+
+# 安装依赖
+pip install -e ".[all]"
+```
+
+#### Windows 11 (CMD)
+
+```cmd
+# 克隆仓库
+git clone <repo-url>
+cd npu-mfu-analyzer
+
+# 创建虚拟环境
+python -m venv .venv
+.venv\Scripts\activate.bat
+
+# 安装依赖
+pip install -e ".[all]"
+```
+
+### Ollama 安装（可选，用于本地 LLM）
+
+#### Linux
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+ollama serve &
+ollama pull qwen2.5:7b
+```
+
+#### macOS
+
+```bash
+brew install ollama
+ollama serve &
+ollama pull qwen2.5:7b
+```
+
+#### Windows 11
+
+1. 从 [Ollama 官网](https://ollama.com/download/windows) 下载安装包
+2. 运行安装程序
+3. 打开 PowerShell，执行：
+
+```powershell
+ollama serve
+# 新开一个终端
+ollama pull qwen2.5:7b
 ```
 
 ### 命令行使用
