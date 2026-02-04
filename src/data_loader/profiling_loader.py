@@ -156,21 +156,70 @@ class ProfilingLoader:
         return "unknown"
     
     def _count_ranks(self, db_paths: List[str], json_paths: List[str]) -> int:
-        """统计 rank 数量"""
+        """
+        统计 rank/worker 数量
+
+        支持多种命名模式：
+        - rank_0, rank_1
+        - worker-0, worker-1
+        - profiler_0.db, profiler_1.db
+        - card_0, device_0
+        - ma-job-xxx-worker-0_yyy (复杂目录结构)
+        以及任何包含数字序号的路径模式
+        """
         import re
         ranks = set()
-        
+
+        # 常见的 rank/worker 前缀模式（使用单词边界确保精确匹配）
+        # 模式解释：
+        # - (?:...) 非捕获组
+        # - [_-]? 可选的下划线或连字符
+        # - (\d+) 捕获数字（rank 编号）
+        # - (?:_|/|\.|:) 数字后的分隔符（确保不是更大数字的一部分）
+        patterns = [
+            # 匹配 /worker-0/, /rank_1/, profiler_2.db 等
+            r'/(?:rank|worker|profiler|card|device|node)[_-]?(\d+)(?=_|/|\.|:)',
+            # 匹配路径开头的 rank_0/, worker-1/ 等
+            r'^(?:rank|worker|profiler|card|device|node)[_-]?(\d+)(?=_|/|\.|:)',
+            # 匹配复杂结构如 ma-job-xxx-worker-0_yyy
+            r'(?:rank|worker|profiler|card|device|node)[_-]?(\d+)(?=_|/|\.|:|$)',
+        ]
+
         for path in db_paths + json_paths:
-            # 匹配 rank_0, rank_1 等
-            match = re.search(r'rank[_-]?(\d+)', path, re.IGNORECASE)
-            if match:
-                ranks.add(int(match.group(1)))
-            
-            # 匹配 profiler_0.db, profiler_1.db 等
-            match = re.search(r'profiler[_-]?(\d+)', path, re.IGNORECASE)
-            if match:
-                ranks.add(int(match.group(1)))
-        
+            # 首先尝试匹配已知前缀（精确匹配）
+            for pattern in patterns:
+                matches = re.finditer(pattern, path, re.IGNORECASE)
+                for match in matches:
+                    rank_num = int(match.group(1))
+                    ranks.add(rank_num)
+
+            # 如果没有匹配到已知前缀，尝试从目录结构推断
+            # 例如: ASCEND_PROFILER_OUTPUT/worker-0/trace_view.json
+            #      profiler_zarr/ma-job-xxx-worker-0_yyy/trace_view.json
+            path_parts = Path(path).parts
+
+            # 查找包含数字序号的目录部分
+            for part in path_parts:
+                # 匹配 worker-0, worker-1 等模式
+                match = re.search(r'(^|/)(?:worker|rank)[_-]?(\d+)(?:/|_|$)', part, re.IGNORECASE)
+                if match:
+                    ranks.add(int(match.group(2)))
+
+                # 匹配其他可能的编号模式（如数字结尾的目录名）
+                # 例如: worker0, rank1, node2 等
+                match = re.search(r'(\d+)$', part)
+                if match and len(part) < 20:  # 避免匹配到过长的哈希字符串
+                    num = int(match.group(1))
+                    # 排除一些明显不是 rank 的目录名模式
+                    if (0 <= num <= 1024 and
+                        not part.startswith('pytest') and
+                        not part.startswith('test_') and
+                        not part.startswith('test_count_ranks') and
+                        'tmp' not in part.lower() and
+                        'temp' not in part.lower()):
+                        ranks.add(num)
+
+        logger.debug(f"Detected ranks: {sorted(ranks)}")
         return len(ranks) if ranks else 1
     
     def get_timeline_summary(self, rank: Optional[int] = None) -> Dict[str, Any]:
@@ -382,37 +431,65 @@ class ProfilingLoader:
         return {}
     
     def _get_db_path(self, rank: Optional[int] = None) -> Optional[str]:
-        """获取指定 rank 的 DB 路径"""
+        """
+        获取指定 rank 的 DB 路径
+
+        支持多种命名模式：rank_0, worker-0, profiler_0, card_0 等
+        """
+        import re
         info = self.detect()
-        
+
         if not info.db_paths:
             return None
-        
+
         if rank is not None:
-            # 查找指定 rank 的 DB
+            # 多种匹配模式
+            patterns = [
+                f'rank[_-]?{rank}\\b',
+                f'worker[_-]?{rank}\\b',
+                f'profiler[_-]?{rank}\\b',
+                f'card[_-]?{rank}\\b',
+                f'device[_-]?{rank}\\b',
+            ]
+
             for path in info.db_paths:
-                if f"rank_{rank}" in path or f"rank{rank}" in path or f"profiler_{rank}" in path:
-                    return path
-        
+                for pattern in patterns:
+                    if re.search(pattern, path, re.IGNORECASE):
+                        return path
+
         # 返回第一个可用的
         return info.db_paths[0] if info.db_paths else None
     
     def _get_json_path(self, rank: Optional[int], file_type: str) -> Optional[str]:
-        """获取指定 rank 的 JSON 路径"""
+        """
+        获取指定 rank 的 JSON 路径
+
+        支持多种命名模式：rank_0, worker-0, profiler_0 等
+        """
+        import re
         info = self.detect()
-        
-        for path in info.json_paths:
-            if file_type in path:
-                if rank is None:
-                    return path
-                if f"rank_{rank}" in path or f"rank{rank}" in path:
-                    return path
-        
-        # 返回第一个匹配的
+
+        # 首先尝试精确匹配指定的 rank
+        if rank is not None:
+            patterns = [
+                f'rank[_-]?{rank}\\b',
+                f'worker[_-]?{rank}\\b',
+                f'profiler[_-]?{rank}\\b',
+                f'card[_-]?{rank}\\b',
+                f'device[_-]?{rank}\\b',
+            ]
+
+            for path in info.json_paths:
+                if file_type in path:
+                    for pattern in patterns:
+                        if re.search(pattern, path, re.IGNORECASE):
+                            return path
+
+        # 返回第一个匹配的（rank=None 或未找到指定 rank）
         for path in info.json_paths:
             if file_type in path:
                 return path
-        
+
         return None
     
     def close(self):
