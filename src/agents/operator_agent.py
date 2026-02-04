@@ -22,6 +22,12 @@ from src.agents.fusion_rules import (
     ASCEND_FUSED_OPERATORS,
     find_ascend_fused_op,
 )
+from src.agents.aikg_integration import (
+    AIKGIntegrator,
+    AIKGRequestConverter,
+    AIKGKernelClient,
+    GeneratedKernel,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -434,6 +440,9 @@ class OperatorAnalysisData:
     # 融合机会分析
     fusion_opportunities: List[FusionOpportunity] = field(default_factory=list)
 
+    # AIKG 生成的融合算子
+    generated_kernels: List[GeneratedKernel] = field(default_factory=list)
+
     # 芯片信息
     chip_name: str = ""
     peak_flops_tflops: float = 0.0
@@ -483,6 +492,27 @@ class OperatorAnalysisData:
             for i, opp in enumerate(self.fusion_opportunities[:5], 1):
                 lines.append(opp.to_prompt_text())
                 lines.append("")
+
+        # AIKG 生成的融合算子
+        if self.generated_kernels:
+            successful_kernels = [k for k in self.generated_kernels if k.status.value == "success"]
+            lines.extend([
+                "",
+                "### AIKG 生成的融合算子",
+                f"- 成功生成 {len(successful_kernels)} 个融合算子",
+            ])
+            if successful_kernels:
+                lines.append("")
+                lines.append("#### 生成的算子列表：")
+                for kernel in successful_kernels[:5]:
+                    lines.append(
+                        f"- {kernel.kernel_name} "
+                        f"(预估加速: {kernel.estimated_speedup:.1f}x)"
+                    )
+                    if kernel.triton_file:
+                        lines.append(f"  - Triton 代码: {kernel.triton_file}")
+                    if kernel.build_file:
+                        lines.append(f"  - 编译脚本: {kernel.build_file}")
 
         return "\n".join(lines)
 
@@ -546,9 +576,58 @@ class OperatorAgent(BaseAgent):
         self._mfu_calculator: Optional[MFUCalculator] = None
         self._fusion_analyzer = FusionAnalyzer()
 
+        # AIKG 集成（可选）
+        self._aikg_integrator: Optional[AIKGIntegrator] = None
+        if config and config.get("aikg_enabled", False):
+            self._init_aikg_integration(config)
+    
     def get_prompt_template(self) -> str:
         return self.PROMPT_TEMPLATE
 
+    def _init_aikg_integration(self, config: Dict[str, Any]):
+        """
+        初始化 AIKG 集成
+
+        Args:
+            config: 配置字典，包含以下可选字段：
+                - aikg_service_url: AIKG 服务 URL
+                - aikg_output_dir: AIKG 生成文件输出目录
+                - aikg_min_speedup: 最小加速比阈值
+                - aikg_max_complexity: 最大复杂度
+                - aikg_skip_native: 是否跳过昇腾已有算子
+        """
+        # 创建转换器
+        converter = AIKGRequestConverter(
+            min_speedup_threshold=config.get("aikg_min_speedup", 1.05),
+            max_complexity=config.get("aikg_max_complexity", "高"),
+            skip_native_ops=config.get("aikg_skip_native", True),
+        )
+
+        # 创建客户端
+        client = AIKGKernelClient(
+            service_url=config.get("aikg_service_url"),
+            llm_client=self.llm,  # 复用现有的 LLM
+            timeout=config.get("aikg_timeout", 300),
+            max_concurrent=config.get("aikg_max_concurrent", 3),
+        )
+
+        # 创建集成器
+        from pathlib import Path
+        output_dir = config.get("aikg_output_dir")
+        if output_dir:
+            output_dir = Path(output_dir)
+
+        self._aikg_integrator = AIKGIntegrator(
+            converter=converter,
+            client=client,
+            output_dir=output_dir,
+        )
+
+        logger.info(
+            f"AIKG integration enabled: service={config.get('aikg_service_url') or 'local LLM'}, "
+            f"output={output_dir or 'in-memory'}"
+        )
+    
     async def analyze(self, data: Dict[str, Any]) -> AnalysisResult:
         """
         分析算子数据
@@ -592,7 +671,15 @@ class OperatorAgent(BaseAgent):
                     timeline_data=data.get("timeline_events")
                 )
 
-            # 4. 生成 Prompt 并调用 LLM
+                # 4. AIKG 生成融合算子（如果启用）
+                if self._aikg_integrator and analysis_data.fusion_opportunities:
+                    generated_kernels = await self._aikg_integrator.generate_from_opportunities(
+                        analysis_data.fusion_opportunities
+                    )
+                    analysis_data.generated_kernels = generated_kernels
+                    logger.info(f"AIKG generated {len(generated_kernels)} fusion kernels")
+
+            # 5. 生成 Prompt 并调用 LLM
             prompt = self.format_prompt(
                 self.PROMPT_TEMPLATE,
                 data_summary=analysis_data.to_prompt_text()
@@ -641,11 +728,11 @@ class OperatorAgent(BaseAgent):
                 summary="算子分析失败",
                 error=str(e),
             )
-
+    
     def _prepare_analysis_data(self, data: Dict[str, Any]) -> OperatorAnalysisData:
         """准备分析数据"""
         analysis_data = OperatorAnalysisData()
-
+        
         # 芯片信息
         if "chip_info" in data:
             chip_info = data["chip_info"]
@@ -656,36 +743,36 @@ class OperatorAgent(BaseAgent):
             chip_info = ChipInfo.from_profiling_path(data["profiling_path"])
             analysis_data.chip_name = chip_info.chip_name
             analysis_data.peak_flops_tflops = chip_info.get_peak_flops() / 1e12
-
+        
         # Top 算子
         if "top_operators" in data:
             analysis_data.top_operators = data["top_operators"]
             analysis_data.total_operators = len(data["top_operators"])
-
+        
         return analysis_data
-
+    
     def _calculate_mfu(
-        self,
+        self, 
         operators_df: pd.DataFrame,
         chip_info: Optional[ChipInfo] = None,
     ) -> Optional[MFUMetrics]:
         """计算 MFU"""
         if operators_df.empty:
             return None
-
+        
         if chip_info is None:
             chip_info = ChipInfo.default_ascend_910b()
-
+        
         calculator = MFUCalculator(chip_info)
         return calculator.analyze_operators(operators_df)
-
+    
     def _extract_recommendations(self, response: str) -> List[str]:
         """从 LLM 响应中提取优化建议"""
         recommendations = []
-
+        
         lines = response.split("\n")
         in_recommendation = False
-
+        
         for line in lines:
             line_lower = line.lower()
             if "建议" in line or "优化" in line or "suggestion" in line_lower:
@@ -694,5 +781,5 @@ class OperatorAgent(BaseAgent):
                 clean_line = line.strip().lstrip("-*•0123456789. )")
                 if clean_line and len(clean_line) > 5:
                     recommendations.append(clean_line)
-
+        
         return recommendations[:10]
