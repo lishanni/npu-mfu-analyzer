@@ -211,14 +211,8 @@ class DataSummarizer:
         timeline_summary = self.loader.get_timeline_summary()
         if timeline_summary:
             summary.time_breakdown = timeline_summary.get("by_category", {})
-            
-            # 转换 Top 算子格式
-            top_events = timeline_summary.get("top_by_duration", [])
-            for dur, name, cat in top_events:
-                summary.top_operators.append({
-                    "name": name,
-                    "dur": dur,
-                    "cat": cat,
-                })
-        
+
+        # 获取 Top Kernel 算子（优先从 DB/CSV，过滤掉 Python 栈帧）
+        summary.top_operators = self.loader.get_top_kernels(rank=None, top_n=10)
+
         return summary

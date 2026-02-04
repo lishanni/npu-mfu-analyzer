@@ -390,7 +390,7 @@ class ProfilingLoader:
     def get_communication_data(self, rank: Optional[int] = None) -> pd.DataFrame:
         """获取通信数据"""
         info = self.detect()
-        
+
         if info.data_type == "db":
             db_path = self._get_db_path(rank)
             if db_path:
@@ -408,8 +408,166 @@ class ProfilingLoader:
                     conn.close()
                 except Exception as e:
                     logger.error(f"Error reading communication data: {e}")
-        
+
         return pd.DataFrame()
+
+    def get_top_kernels(self, rank: Optional[int] = None, top_n: int = 10) -> List[Dict[str, Any]]:
+        """
+        获取 Top N 耗时 Kernel 算子
+
+        优先从 DB 的 TASK 表查询，其次从 op_statistic.csv 或 kernel_details.csv 读取。
+
+        Args:
+            rank: 指定 rank，None 表示使用第一个可用的
+            top_n: 返回的算子数量
+
+        Returns:
+            [{"name": "kernel_name", "dur": 123.45, "cat": "Kernel"}, ...]
+        """
+        info = self.detect()
+        kernels = []
+
+        # 优先从 DB 获取
+        db_path = None
+        if info.data_type == "db" and info.db_paths:
+            db_path = self._get_db_path(rank)
+
+        # 如果没有找到 DB，尝试查找任意 .db 文件
+        if db_path is None:
+            db_candidates = glob.glob(str(self.profiling_path / "**/*.db"), recursive=True)
+            if db_candidates:
+                db_path = db_candidates[0]
+
+        if db_path:
+            try:
+                from src.data_loader.db_query import DBQuery
+
+                db = DBQuery(db_path)
+                df = db.query_kernel_ops(top_n=top_n)
+                db.close()
+
+                if not df.empty:
+                    for _, row in df.iterrows():
+                        kernels.append({
+                            "name": row.get("name", "unknown"),
+                            "dur": float(row.get("dur", 0)),
+                            "cat": row.get("cat", "Kernel"),
+                        })
+                    return kernels
+            except Exception as e:
+                logger.debug(f"Failed to get kernels from DB: {e}")
+
+        # 尝试从 CSV 获取
+        kernels = self._get_kernels_from_csv(rank, top_n)
+        if kernels:
+            return kernels
+
+        # 最后从 trace_view.json 中过滤 Kernel 事件
+        kernels = self._get_kernels_from_timeline(rank, top_n)
+
+        return kernels
+
+    def _get_kernels_from_csv(self, rank: Optional[int], top_n: int) -> List[Dict[str, Any]]:
+        """从 CSV 文件获取 Top Kernel 算子"""
+        csv_files = [
+            "op_statistic.csv",
+            "kernel_details.csv",
+        ]
+
+        for csv_file in csv_files:
+            candidates = glob.glob(str(self.profiling_path / "**" / csv_file), recursive=True)
+            if not candidates:
+                continue
+
+            try:
+                df = pd.read_csv(candidates[0])
+
+                # 标准化列名（去除空格并转小写）
+                original_columns = list(df.columns)
+                df.columns = [str(c).strip().lower() for c in df.columns]
+
+                # 查找耗时相关列（支持更多变体）
+                dur_col = None
+                for col in ["duration", "dur", "time", "total_time", "avg_duration", "total_duration"]:
+                    if col in df.columns:
+                        dur_col = col
+                        break
+
+                if dur_col is None:
+                    logger.debug(f"No duration column found in {csv_file}, columns: {df.columns}")
+                    continue
+
+                # 查找名称列（支持更多变体）
+                name_col = None
+                for col in ["name", "op_name", "kernel_name", "operator_name"]:
+                    if col in df.columns:
+                        name_col = col
+                        break
+
+                if name_col is None:
+                    logger.debug(f"No name column found in {csv_file}, columns: {df.columns}")
+                    continue
+
+                # 按耗时排序并取 Top N
+                df_sorted = df.sort_values(by=dur_col, ascending=False).head(top_n)
+
+                kernels = []
+                for _, row in df_sorted.iterrows():
+                    kernels.append({
+                        "name": str(row[name_col]),
+                        "dur": float(row[dur_col]),
+                        "cat": "Kernel",
+                    })
+
+                if kernels:
+                    logger.info(f"Loaded {len(kernels)} kernels from {csv_file}")
+                    return kernels
+
+            except Exception as e:
+                logger.debug(f"Failed to read {csv_file}: {e}")
+
+        return []
+
+    def _get_kernels_from_timeline(self, rank: Optional[int], top_n: int) -> List[Dict[str, Any]]:
+        """从 trace_view.json 中过滤 Kernel 事件"""
+        from decimal import Decimal
+
+        try:
+            json_path = self._get_json_path(rank, "trace_view")
+            if not json_path:
+                return []
+
+            kernels = []
+            for event in StreamParser(json_path).iter_events(show_progress=False):
+                cat = event.get("cat", "")
+                if cat == "Kernel" or cat.lower() == "kernel":
+                    dur = event.get("dur", 0)
+                    # 统一处理各种类型（包括 Decimal）
+                    if isinstance(dur, str):
+                        try:
+                            dur = float(dur)
+                        except ValueError:
+                            dur = 0.0
+                    elif isinstance(dur, Decimal):
+                        dur = float(dur)
+                    elif isinstance(dur, (int, float)):
+                        dur = float(dur)
+                    else:
+                        dur = 0.0
+
+                    kernels.append({
+                        "name": event.get("name", "unknown"),
+                        "dur": dur,
+                        "cat": "Kernel",
+                    })
+
+            # 按耗时排序并取 Top N
+            kernels.sort(key=lambda x: x["dur"], reverse=True)
+            return kernels[:top_n]
+
+        except Exception as e:
+            logger.debug(f"Failed to get kernels from timeline: {e}")
+            return []
     
     def get_hardware_info(self) -> Dict[str, Any]:
         """获取硬件信息"""
