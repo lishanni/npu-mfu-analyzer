@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.data_loader import ProfilingLoader
 from src.analyzers import OverlapCalculator, SlowRankDetector, MFUCalculator
-from src.hardware import get_registry, detect_hardware
+from src.hardware import detect_hardware
 from src.pattern_matcher import UniversalPatternMatcher
 
 
@@ -35,11 +35,10 @@ def main(profiling_path: str):
     
     # 2. 硬件检测
     print("\n[2/5] 检测硬件信息...")
-    registry = get_registry()
-    hw_spec = detect_hardware(profiling_dir, registry)
+    hw_spec = detect_hardware(str(profiling_dir))
     if hw_spec:
-        print(f"  检测到: {hw_spec.chip_name} ({hw_spec.variant})")
-        print(f"  算力: FP16={hw_spec.fp16_tflops} TFLOPS, BF16={hw_spec.bf16_tflops} TFLOPS")
+        print(f"  检测到: {hw_spec.name} ({hw_spec.variant})")
+        print(f"  算力: FP16={hw_spec.peak_tflops_fp16} TFLOPS")
     else:
         print("  未检测到硬件信息，使用默认配置")
     

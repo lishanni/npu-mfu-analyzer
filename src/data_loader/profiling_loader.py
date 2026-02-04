@@ -468,7 +468,7 @@ class ProfilingLoader:
         return kernels
 
     def _get_kernels_from_csv(self, rank: Optional[int], top_n: int) -> List[Dict[str, Any]]:
-        """从 CSV 文件获取 Top Kernel 算子"""
+        """从 CSV 文件获取 Top Kernel 算子（按基础算子类型聚合）"""
         csv_files = [
             "op_statistic.csv",
             "kernel_details.csv",
@@ -484,12 +484,12 @@ class ProfilingLoader:
 
                 # 标准化列名（去除空格并转小写）
                 original_columns = list(df.columns)
-                df.columns = [str(c).strip().lower() for c in df.columns]
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
 
-                # 查找耗时相关列（支持更多变体）
+                # 查找耗时相关列（支持更多变体，包括带单位的列名）
                 dur_col = None
-                for col in ["duration", "dur", "time", "total_time", "avg_duration", "total_duration"]:
-                    if col in df.columns:
+                for col in df.columns:
+                    if any(keyword in col for keyword in ["duration", "dur", "time"]):
                         dur_col = col
                         break
 
@@ -499,8 +499,8 @@ class ProfilingLoader:
 
                 # 查找名称列（支持更多变体）
                 name_col = None
-                for col in ["name", "op_name", "kernel_name", "operator_name"]:
-                    if col in df.columns:
+                for col in df.columns:
+                    if any(keyword in col for keyword in ["name", "op", "kernel", "operator"]):
                         name_col = col
                         break
 
@@ -508,19 +508,45 @@ class ProfilingLoader:
                     logger.debug(f"No name column found in {csv_file}, columns: {df.columns}")
                     continue
 
-                # 按耗时排序并取 Top N
-                df_sorted = df.sort_values(by=dur_col, ascending=False).head(top_n)
+                # 提取基础算子名称（去除参数后缀）
+                # 例如: MatMulV2_ND_ND_FP16_FP16_false_true_all_98499 -> MatMulV2
+                # 或者: MatMulV2_ND_ND_FP16_FP16_false_true_all_98499 -> MatMulV2_ND_ND
+                import re
+                def extract_base_name(name):
+                    # 移除末尾的数字后缀（如 _98499, _98513）
+                    name = re.sub(r'_\d+$', '', str(name))
+                    # 移除更多的参数后缀模式（保留核心算子类型）
+                    # 保留基础类型: MatMulV2, Add, Mul, Sub 等
+                    # 以及维度信息: _ND_ND_, _N_N_, _N_N_N_
+                    base_patterns = [
+                        r'^(MatMulV2|MatMul|GEMM|Add|Mul|Sub|Div|Pow|Sqrt|Exp|Log)',
+                        r'^(Conv2D|Conv3D|MaxPool|AvgPool|BatchNorm)',
+                        r'^(FusedInferAttentionScore|FusedAttention)',
+                        r'^(LayerNorm|Softmax|Dropout|ReLU|GELU)',
+                        r'(aclnn[A-Z][a-z]+)',  # 昇腾 API
+                    ]
+                    for pattern in base_patterns:
+                        match = re.match(pattern, name)
+                        if match:
+                            return match.group(1) if match.groups() else match.group(0)
+                    return name
+
+                # 创建基础算子名称列并聚合（使用 .loc 避免 pandas 警告）
+                df = df.copy()  # 确保我们有一个副本
+                df.loc[:, '_base_name'] = df[name_col].apply(extract_base_name)
+                df_grouped = df.groupby('_base_name', as_index=False)[dur_col].sum()
+                df_sorted = df_grouped.sort_values(by=dur_col, ascending=False).head(top_n)
 
                 kernels = []
                 for _, row in df_sorted.iterrows():
                     kernels.append({
-                        "name": str(row[name_col]),
+                        "name": str(row['_base_name']),
                         "dur": float(row[dur_col]),
                         "cat": "Kernel",
                     })
 
                 if kernels:
-                    logger.info(f"Loaded {len(kernels)} kernels from {csv_file}")
+                    logger.info(f"Loaded {len(kernels)} kernels (aggregated by base type) from {csv_file}")
                     return kernels
 
             except Exception as e:
