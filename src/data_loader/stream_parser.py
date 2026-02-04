@@ -9,6 +9,7 @@ import os
 import logging
 from typing import Iterator, Callable, Any, Optional, Dict, List
 from collections import defaultdict
+from decimal import Decimal
 import heapq
 
 try:
@@ -185,18 +186,23 @@ class TimelineSummarizer:
     def process_event(self, event: Dict[str, Any]):
         """处理单个事件，更新统计信息"""
         self.stats["total_events"] += 1
-        
+
         dur = event.get("dur", 0)
+        # 统一转换为 float 类型（处理 str、Decimal 等类型）
         if isinstance(dur, str):
             try:
                 dur = float(dur)
             except ValueError:
-                dur = 0
-        
+                dur = 0.0
+        elif isinstance(dur, Decimal):
+            dur = float(dur)
+        elif not isinstance(dur, (int, float)):
+            dur = 0.0
+
         cat = event.get("cat", "unknown")
         pid = event.get("pid", "unknown")
         name = event.get("name", "unknown")
-        
+
         self.stats["total_duration_us"] += dur
         self.stats["by_category"][cat]["count"] += 1
         self.stats["by_category"][cat]["duration"] += dur
@@ -298,19 +304,28 @@ def _extract_time_info(event: Dict[str, Any]) -> Dict[str, Any]:
     """提取事件的关键时间信息，减少内存占用"""
     ts = event.get("ts", 0)
     dur = event.get("dur", 0)
-    
-    # 处理字符串格式的时间戳
+
+    # 统一转换为 float 类型（处理 str、Decimal 等类型）
     if isinstance(ts, str):
         try:
             ts = float(ts)
         except ValueError:
-            ts = 0
+            ts = 0.0
+    elif isinstance(ts, Decimal):
+        ts = float(ts)
+    elif not isinstance(ts, (int, float)):
+        ts = 0.0
+
     if isinstance(dur, str):
         try:
             dur = float(dur)
         except ValueError:
-            dur = 0
-    
+            dur = 0.0
+    elif isinstance(dur, Decimal):
+        dur = float(dur)
+    elif not isinstance(dur, (int, float)):
+        dur = 0.0
+
     return {
         "name": event.get("name", ""),
         "ts": ts,
