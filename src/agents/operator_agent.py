@@ -55,7 +55,7 @@ class OperatorAnalysisData:
             lines.append("### Top 10 耗时算子")
             for i, op in enumerate(self.top_operators[:10], 1):
                 name = op.get("name", "unknown")
-                dur = op.get("dur", 0) / 1e6  # ns -> ms
+                dur = op.get("dur", 0) / 1000  # us -> ms
                 lines.append(f"{i}. {name}: {dur:.2f} ms")
         
         if self.low_efficiency_operators:

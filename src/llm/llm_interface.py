@@ -41,6 +41,11 @@ class LLMConfig:
             elif self.backend == "claude":
                 self.api_key = os.getenv("ANTHROPIC_API_KEY")
 
+        # 从环境变量获取 base_url
+        if self.base_url is None:
+            if self.backend == "claude":
+                self.base_url = os.getenv("ANTHROPIC_BASE_URL")
+
 
 @dataclass
 class LLMResponse:
@@ -164,11 +169,16 @@ class ClaudeBackend(LLMInterface):
         if self._client is None:
             try:
                 from anthropic import AsyncAnthropic
-                
-                self._client = AsyncAnthropic(api_key=self.config.api_key)
+
+                # 支持自定义 base_url（用于代理服务）
+                client_kwargs = {"api_key": self.config.api_key}
+                if self.config.base_url:
+                    client_kwargs["base_url"] = self.config.base_url
+
+                self._client = AsyncAnthropic(**client_kwargs)
             except ImportError:
                 raise ImportError("anthropic package not installed. Run: pip install anthropic")
-        
+
         return self._client
     
     async def complete(
