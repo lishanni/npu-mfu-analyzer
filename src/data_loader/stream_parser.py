@@ -3,6 +3,8 @@
 
 使用 ijson 进行流式解析，避免内存溢出。
 复用自 msprof-analyze 的设计模式。
+
+集成数据验证和错误处理功能。
 """
 
 import os
@@ -19,23 +21,36 @@ except ImportError:
 
 from tqdm import tqdm
 
+from .data_validator import (
+    ProfilingDataValidator,
+    ProfilingDataSanitizer,
+    DataQualityReport,
+    DataQualityLevel,
+    DataIssue,
+    IssueType,
+)
+
 logger = logging.getLogger(__name__)
 
 
 class StreamParser:
     """
     流式 JSON 解析器
-    
+
     支持两种模式：
     1. 流式解析（默认）：使用 ijson，逐条处理事件
     2. 全量加载：小文件或调试场景
-    
+
+    集成数据验证和错误处理功能。
+
     Usage:
         parser = StreamParser(json_path)
+        parser.set_strict_mode(False)  # 宽松模式，继续处理有效数据
         for event in parser.iter_events():
             process(event)
+        quality_report = parser.get_quality_report()
     """
-    
+
     def __init__(self, file_path: str, disable_streaming: bool = False):
         """
         Args:
@@ -44,42 +59,69 @@ class StreamParser:
         """
         self.file_path = file_path
         self.disable_streaming = disable_streaming or os.getenv("DISABLE_STREAMING_READER") == "1"
-        
+
         if ijson is None and not self.disable_streaming:
             logger.warning("ijson not installed, falling back to full load mode")
             self.disable_streaming = True
-        
+
         self._file_size = self._get_file_size()
         self._event_count = 0
-    
+
+        # 数据验证相关
+        self._strict_mode = False
+        self._quality_report: Optional[DataQualityReport] = None
+        self._error_count = 0
+        self._warning_count = 0
+
     def _get_file_size(self) -> int:
         """获取文件大小（字节）"""
         try:
             return os.path.getsize(self.file_path)
         except OSError:
             return 0
-    
+
     @property
     def file_size_mb(self) -> float:
         """文件大小（MB）"""
         return self._file_size / (1024 * 1024)
-    
+
+    def set_strict_mode(self, strict: bool):
+        """
+        设置严格模式
+
+        Args:
+            strict: True 表示遇到错误立即停止，False 表示跳过错误继续处理
+        """
+        self._strict_mode = strict
+
+    def get_quality_report(self) -> Optional[DataQualityReport]:
+        """获取数据质量报告"""
+        return self._quality_report
+
     def iter_events(self, show_progress: bool = True) -> Iterator[Dict[str, Any]]:
         """
         迭代返回 JSON 数组中的每个事件
-        
+
+        包含数据验证和清洗功能：
+        - 自动跳过无效事件
+        - 修复常见数据问题
+        - 记录数据质量问题
+
         Args:
             show_progress: 是否显示进度条
-            
+
         Yields:
-            dict: 单个事件对象
+            dict: 清洗后的事件对象
         """
         if not os.path.exists(self.file_path):
             logger.error(f"File not found: {self.file_path}")
             return
-        
+
         logger.info(f"Parsing {self.file_path} ({self.file_size_mb:.1f} MB), streaming={not self.disable_streaming}")
-        
+
+        # 初始化质量报告
+        self._quality_report = DataQualityReport(file_path=self.file_path)
+
         try:
             with open(self.file_path, "r", encoding="utf-8") as f:
                 if self.disable_streaming:
@@ -90,7 +132,7 @@ class StreamParser:
                 else:
                     # 流式解析模式
                     iterator = ijson.items(f, "item")
-                
+
                 # 包装进度条
                 if show_progress:
                     iterator = tqdm(
@@ -98,21 +140,88 @@ class StreamParser:
                         desc="Parsing events",
                         unit=" events",
                         leave=False,
-                        ncols=100
                     )
-                
-                for event in iterator:
-                    self._event_count += 1
-                    yield event
-                    
+
+                for i, raw_event in enumerate(iterator):
+                    # 验证事件
+                    issues = ProfilingDataValidator.validate_timeline_event(
+                        raw_event, i, self.file_path
+                    )
+
+                    # 记录问题
+                    for issue in issues:
+                        self._quality_report.add_issue(issue)
+                        if issue.severity == "error":
+                            self._error_count += 1
+                        elif issue.severity == "warning":
+                            self._warning_count += 1
+
+                    # 严格模式下遇到错误停止
+                    if self._strict_mode and any(i.severity == "error" for i in issues):
+                        logger.error(f"Strict mode: stopping at event {i} due to error")
+                        break
+
+                    # 清洗事件
+                    cleaned_event, is_valid = ProfilingDataSanitizer.sanitize_timeline_event(
+                        raw_event, i
+                    )
+
+                    if is_valid:
+                        self._event_count += 1
+                        yield cleaned_event
+                    else:
+                        self._quality_report.skipped_events += 1
+
+                # 更新质量报告统计
+                self._quality_report.total_events = i + 1
+                self._quality_report.valid_events = self._event_count
+                self._quality_report.has_timeline_data = self._event_count > 0
+
         except Exception as e:
-            logger.error(f"Error parsing {self.file_path}: {e}")
-            raise
-        
-        logger.info(f"Parsed {self._event_count} events from {self.file_path}")
-    
+            logger.error(f"Parse error: {e}", exc_info=True)
+            self._quality_report.add_issue(DataIssue(
+                issue_type=IssueType.PARSE_ERROR,
+                severity="error",
+                location=self.file_path,
+                message=f"解析异常: {e}",
+                suggestion="检查文件权限和格式",
+            ))
+
+    def get_parse_summary(self) -> Dict[str, Any]:
+        """
+        获取解析摘要信息
+
+        Returns:
+            {
+                "total_events": int,
+                "valid_events": int,
+                "skipped_events": int,
+                "error_count": int,
+                "warning_count": int,
+                "quality_level": str,
+            }
+        """
+        if self._quality_report is None:
+            return {
+                "total_events": 0,
+                "valid_events": 0,
+                "skipped_events": 0,
+                "error_count": 0,
+                "warning_count": 0,
+                "quality_level": "unknown",
+            }
+
+        return {
+            "total_events": self._quality_report.total_events,
+            "valid_events": self._quality_report.valid_events,
+            "skipped_events": self._quality_report.skipped_events,
+            "error_count": self._error_count,
+            "warning_count": self._warning_count,
+            "quality_level": self._quality_report.quality_level.value,
+        }
+
     def parse_with_filter(
-        self, 
+        self,
         filter_func: Callable[[Dict[str, Any]], bool],
         transform_func: Optional[Callable[[Dict[str, Any]], Any]] = None,
         show_progress: bool = True
