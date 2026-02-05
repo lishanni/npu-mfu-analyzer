@@ -50,7 +50,7 @@ DTYPE_MAP = {
 # 算子类型映射
 OP_TYPE_MAP = {
     OperatorType.MATMUL: ["MatMulV2", "MatMulV3", "MatMul", "BatchMatMul", "BatchMatMulV2"],
-    OperatorType.FLASH_ATTENTION: ["FlashAttentionScore", "FlashAttention"],
+    OperatorType.FLASH_ATTENTION: ["FlashAttentionScore", "FlashAttention", "FusedInferAttentionScore", "FusedAttention"],
     OperatorType.CONV2D: ["Conv2D", "Conv2DBackpropFilter", "Conv2DBackpropInput"],
 }
 

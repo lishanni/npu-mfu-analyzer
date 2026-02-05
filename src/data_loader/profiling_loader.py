@@ -676,6 +676,66 @@ class ProfilingLoader:
 
         return None
     
+    def get_kernel_details_for_mfu(self, top_n: int = 1000) -> List[Dict[str, Any]]:
+        """
+        获取带形状信息的算子详情，用于 MFU 计算
+
+        从 kernel_details.csv 读取完整的算子信息，包括输入/输出形状。
+        这不进行聚合，保留每个算子的详细信息。
+
+        Args:
+            top_n: 最多返回的算子数量
+
+        Returns:
+            包含形状信息的算子列表
+        """
+        candidates = glob.glob(str(self.profiling_path / "**" / "kernel_details.csv"), recursive=True)
+        if not candidates:
+            logger.warning("kernel_details.csv not found for MFU calculation")
+            return []
+
+        try:
+            df = pd.read_csv(candidates[0])
+            df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+
+            # 检查必要的列
+            required_cols = ['name', 'duration(us)']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                logger.debug(f"Missing columns in kernel_details.csv: {missing_cols}")
+                return []
+
+            # 按耗时排序，取 top_n
+            df_sorted = df.sort_values(by='duration(us)', ascending=False).head(top_n)
+
+            kernels = []
+            skipped_na = 0
+            for _, row in df_sorted.iterrows():
+                input_shapes = str(row.get('input_shapes', '')).strip()
+                output_shapes = str(row.get('output_shapes', '')).strip()
+
+                # 跳过形状为 N/A 或空的行（这些无法计算 FLOPs）
+                # 注意：N/A 表示数据不可用，空字符串表示没有形状信息
+                if not input_shapes or input_shapes in ['nan', 'n/a', 'N/A', '""']:
+                    skipped_na += 1
+                    continue
+
+                kernels.append({
+                    "name": str(row['name']),
+                    "dur": float(row['duration(us)']),  # 微秒
+                    "input_shapes": input_shapes.strip('"'),
+                    "input_types": str(row.get('input_data_types', '')).strip('"'),
+                    "output_shapes": output_shapes.strip('"'),
+                    "output_types": str(row.get('output_data_types', '')).strip('"'),
+                })
+
+            logger.info(f"Loaded {len(kernels)} kernels with shape info from kernel_details.csv (skipped {skipped_na} without shapes)")
+            return kernels
+
+        except Exception as e:
+            logger.error(f"Failed to read kernel_details.csv for MFU: {e}")
+            return []
+
     def close(self):
         """关闭所有数据库连接"""
         for conn in self._db_connections.values():

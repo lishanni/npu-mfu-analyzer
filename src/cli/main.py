@@ -12,6 +12,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 
 import click
 
@@ -99,12 +100,26 @@ def analyze(
 
             # 根据格式输出报告
             if format == "html":
-                output_path = _generate_html_report(profiling_path, output, report)
-                if output_path:
+                # 使用 orchestrator 生成的 HTML 报告（包含 MFU 指标）
+                report_text = report.final_report or _generate_html_report_content(profiling_path, report)
+
+                if output:
+                    output_path = Path(output)
+                    # 如果是目录，生成文件名
+                    if output_path.is_dir():
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        output_path = output_path / f"npu_mfu_report_{timestamp}.html"
+                    # 确保有正确的扩展名
+                    elif output_path.suffix != '.html':
+                        output_path = output_path.with_suffix('.html')
+                    output_path.write_text(report_text, encoding="utf-8")
                     click.echo(f"📄 HTML 报告已保存到: {output_path}")
                 else:
-                    click.echo(click.style("❌ HTML 报告生成失败", fg="red"))
-                    sys.exit(1)
+                    # 默认输出到当前目录
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    output_path = Path(f"npu_mfu_report_{timestamp}.html")
+                    output_path.write_text(report_text, encoding="utf-8")
+                    click.echo(f"📄 HTML 报告已保存到: {output_path}")
             else:
                 # Markdown 格式
                 report_text = report.to_markdown()
@@ -219,6 +234,73 @@ def _generate_html_report(profiling_path: str, output: Optional[str], report: An
     except Exception as e:
         logger.error(f"HTML 报告生成失败: {e}", exc_info=True)
         return None
+
+
+def _generate_html_report_content(profiling_path: str, report: Any = None) -> str:
+    """
+    生成 HTML 格式报告内容（使用 ReportGenerator）
+
+    这是新版 HTML 生成函数，包含 MFU 指标。
+
+    Args:
+        profiling_path: Profiling 数据路径
+        report: AnalysisReport 对象
+
+    Returns:
+        HTML 内容字符串
+    """
+    from src.data_loader.profiling_loader import ProfilingLoader
+    from src.data_loader.data_summarizer import DataSummarizer
+    from src.report.report_generator import ReportGenerator, ReportFormat
+
+    try:
+        # 加载数据
+        loader = ProfilingLoader(profiling_path)
+        summarizer = DataSummarizer(loader)
+        profiling_summary = summarizer.summarize()
+
+        # 提取 Agent 分析结果
+        agent_results = {}
+        advisor_report = None
+        mfu_metrics = None
+        roofline_analysis = None
+
+        if report and hasattr(report, 'agent_results'):
+            agent_results = report.agent_results
+        if report and hasattr(report, 'mfu_metrics'):
+            mfu_metrics = report.mfu_metrics
+        if report and hasattr(report, 'roofline_analysis'):
+            roofline_analysis = report.roofline_analysis
+
+        # 使用 ReportGenerator 生成完整的 HTML 报告
+        report_generator = ReportGenerator()
+
+        # 生成 HTML 报告
+        html = report_generator.generate_from_analysis(
+            profiling_path=profiling_path,
+            profiling_summary=profiling_summary,
+            agent_results=agent_results,
+            advisor_report=advisor_report,
+            mfu_metrics=mfu_metrics,
+            roofline_analysis=roofline_analysis,
+            format=ReportFormat.HTML,
+        )
+
+        return html
+
+    except Exception as e:
+        logger.error(f"HTML 报告内容生成失败: {e}", exc_info=True)
+        # 返回简单的错误 HTML
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head><title>NPU MFU 分析报告</title></head>
+        <body>
+            <h1>报告生成失败</h1>
+            <p>错误: {e}</p>
+        </body>
+        </html>
+        """
 
 
 def _build_html_report(profiling_path: str, top_kernels: list, fusion_opportunities: list, info, agent_results: dict = None) -> str:
