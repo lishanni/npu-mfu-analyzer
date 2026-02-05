@@ -605,12 +605,17 @@ class AIKGKernelClient:
             # 构建提示词
             prompt = request.to_aikg_prompt()
 
+            # 保存 DSL 到文件（在当前执行目录）
+            self._save_dsl_file(request, prompt)
+
             # 调用 LLM
             messages = [Message(role="user", content=prompt)]
             response = await self._llm_client.complete(messages)
 
             # 解析响应（期望 LLM 返回代码块）
-            kernel.triton_code = self._extract_code_block(response, "python")
+            # response 是 LLMResponse 对象，需要提取 content 字段
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            kernel.triton_code = self._extract_code_block(response_text, "python")
             kernel.build_script = self._generate_build_script(request)
             kernel.benchmark_code = self._generate_benchmark_code(request)
 
@@ -758,28 +763,64 @@ if __name__ == "__main__":
         request: AIKGRequest
     ):
         """保存生成的文件"""
-        safe_name = request.fusion_name.replace(" ", "_").replace("-", "_").lower()
+        import hashlib
+        import re
+
+        # 生成安全的文件名（移除/替换特殊字符）
+        # 使用拼音或简化的英文名称会更好，这里使用简单的转义
+        safe_name = request.fusion_name.lower()
+        # 移除特殊字符，只保留字母、数字、下划线和连字符
+        safe_name = re.sub(r'[^\w\-]', '_', safe_name, flags=re.ASCII)
+        # 移除连续的下划线
+        safe_name = re.sub(r'_+', '_', safe_name).strip('_')
+        # 如果结果为空或太短，使用哈希值
+        if len(safe_name) < 3:
+            safe_name = f"fusion_{hashlib.md5(request.fusion_name.encode()).hexdigest()[:8]}"
+
         base_path = output_dir / safe_name
 
         # 保存 Triton 代码
         if kernel.triton_code:
-            triton_path = base_path.with_suffix(".py")
-            triton_path.write_text(kernel.triton_code, encoding="utf-8")
-            kernel.triton_file = triton_path
+            triton_path = str(base_path) + ".py"
+            Path(triton_path).write_text(kernel.triton_code, encoding="utf-8")
+            kernel.triton_file = Path(triton_path)
 
         # 保存编译脚本
         if kernel.build_script:
-            build_path = base_path.with_suffix(".sh")
-            build_path.write_text(kernel.build_script, encoding="utf-8")
-            build_path.chmod(0o755)  # 可执行权限
-            kernel.build_file = build_path
+            build_path = str(base_path) + ".sh"
+            Path(build_path).write_text(kernel.build_script, encoding="utf-8")
+            Path(build_path).chmod(0o755)  # 可执行权限
+            kernel.build_file = Path(build_path)
 
         # 保存性能测试
         if kernel.benchmark_code:
-            bench_path = base_path.with_suffix("_bench.py")
-            bench_path.write_text(kernel.benchmark_code, encoding="utf-8")
-            bench_path.chmod(0o755)
-            kernel.benchmark_file = bench_path
+            bench_path = str(base_path) + "_bench.py"
+            Path(bench_path).write_text(kernel.benchmark_code, encoding="utf-8")
+            Path(bench_path).chmod(0o755)
+            kernel.benchmark_file = Path(bench_path)
+
+    def _save_dsl_file(self, request: AIKGRequest, dsl_content: str):
+        """保存 AIKG DSL 到文件（在当前执行目录）"""
+        import hashlib
+        import re
+        from datetime import datetime
+
+        # 生成安全的文件名
+        safe_name = request.fusion_name.lower()
+        safe_name = re.sub(r'[^\w\-]', '_', safe_name, flags=re.ASCII)
+        safe_name = re.sub(r'_+', '_', safe_name).strip('_')
+        if len(safe_name) < 3:
+            safe_name = f"fusion_{hashlib.md5(request.fusion_name.encode()).hexdigest()[:8]}"
+
+        # 添加时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"aikg_dsl_{safe_name}_{timestamp}.txt"
+
+        # 保存到当前工作目录
+        dsl_path = Path.cwd() / filename
+        dsl_path.write_text(dsl_content, encoding="utf-8")
+
+        logger.info(f"AIKG DSL saved to: {dsl_path}")
 
     def get_stats(self) -> Dict[str, int]:
         """获取生成统计信息"""

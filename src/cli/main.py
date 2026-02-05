@@ -821,6 +821,127 @@ def version():
 
 
 @cli.command()
+@click.argument("profiling_path", type=click.Path(exists=True))
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    default="./generated_kernels",
+    help="融合算子输出目录（默认: ./generated_kernels）"
+)
+@click.option(
+    "--backend", "-b",
+    type=click.Choice(["openai", "claude", "ollama", "deepseek", "mock"]),
+    default="claude",
+    help="LLM 后端（默认: claude）"
+)
+@click.option(
+    "--model", "-m",
+    type=str,
+    default=None,
+    help="LLM 模型名称（Claude 默认: GLM-4.7）"
+)
+@click.option(
+    "--min-speedup",
+    type=float,
+    default=1.05,
+    help="最小加速比阈值（默认: 1.05）"
+)
+@click.option(
+    "--complexity",
+    type=click.Choice(["低", "中等", "高"]),
+    default="高",
+    help="最大实现复杂度（默认: 高）"
+)
+@click.option(
+    "--skip-native/--include-native",
+    default=True,
+    help="跳过/包含 昇腾已有融合算子（默认: 跳过）"
+)
+@click.option(
+    "--timeout",
+    type=int,
+    default=300,
+    help="单个算子生成超时时间（秒，默认: 300）"
+)
+@click.option(
+    "--max-concurrent",
+    type=int,
+    default=3,
+    help="最大并发生成数（默认: 3）"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="详细输出"
+)
+def generate(
+    profiling_path: str,
+    output: str,
+    backend: str,
+    model: Optional[str],
+    min_speedup: float,
+    complexity: str,
+    skip_native: bool,
+    timeout: int,
+    max_concurrent: int,
+    verbose: bool
+):
+    """
+    分析 Profiling 数据并生成融合算子代码（AIKG 工作流）
+
+    完整的自动化工作流：
+    1. 分析 Profiling 数据
+    2. 检测融合机会
+    3. 调用 AIKG 生成 Triton-Ascend 代码
+    4. 保存生成的代码和脚本
+
+    PROFILING_PATH: Profiling 数据目录路径
+
+    示例:
+        npu-analyzer generate /path/to/profiling
+        npu-analyzer generate /path/to/profiling -b claude -m GLM-4.7
+        npu-analyzer generate /path/to/profiling -o ./kernels --min-speedup 1.1
+        npu-analyzer generate /path/to/profiling --complexity 低 --skip-native
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    from src.cli.aikg_workflow import AIKGWorkflow
+
+    click.echo(click.style("🚀 启动 AIKG 融合算子生成工作流", fg="cyan", bold=True))
+    click.echo(f"   Profiling 数据: {profiling_path}")
+    click.echo(f"   LLM 后端: {backend}")
+    click.echo(f"   输出目录: {output}")
+    click.echo(f"   最小加速比: {min_speedup}x")
+    click.echo(f"   最大复杂度: {complexity}")
+    click.echo(f"   跳过昇腾算子: {skip_native}")
+    click.echo("")
+
+    # 创建工作流
+    workflow = AIKGWorkflow(
+        profiling_path=profiling_path,
+        output_dir=output,
+        backend=backend,
+        model=model,
+        min_speedup=min_speedup,
+        max_complexity=complexity,
+        skip_native=skip_native,
+        timeout=timeout,
+        max_concurrent=max_concurrent,
+    )
+
+    # 执行工作流
+    result = asyncio.run(workflow.run())
+
+    # 打印结果摘要
+    workflow.print_summary(result)
+
+    # 根据结果决定退出码
+    if not result.success:
+        sys.exit(1)
+
+
+@cli.command()
 @click.option(
     "--host", "-h",
     type=str,
@@ -841,7 +962,7 @@ def version():
 def web(host: str, port: int, reload: bool):
     """
     启动 Web 服务
-    
+
     启动后访问 http://localhost:8000 使用 Web 界面
     API 文档: http://localhost:8000/docs
     """

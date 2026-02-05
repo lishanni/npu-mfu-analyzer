@@ -421,6 +421,57 @@ def fused_silu_mul(x, y, BLOCK_SIZE: tl.constexpr):
         description="将数据类型转换融合到 MatMul 中",
         ascend_op=None,
     ),
+
+    # 简单逐元素操作融合
+    FusionPattern(
+        name="Add + Mul (Element-wise fusion)",
+        category=FusionCategory.ELEMENT_FUSION,
+        operator_patterns=[
+            r"Add",
+            r"Mul"
+        ],
+        memory_saving=0.15,
+        speedup=1.1,
+        triton_complexity="简单",
+        description="融合加法和乘法操作",
+        ascend_op=None,
+        example_code="""
+@triton.jit
+def fused_add_mul(
+    x_ptr, y_ptr, z_ptr, output_ptr,
+    n_elements,
+    BLOCK_SIZE: tl.constexpr,
+):
+    pid = tl.program_id(axis=0)
+    block_start = pid * BLOCK_SIZE
+    offsets = block_start + tl.arange(0, BLOCK_SIZE)
+    mask = offsets < n_elements
+
+    x = tl.load(x_ptr + offsets, mask=mask)
+    y = tl.load(y_ptr + offsets, mask=mask)
+    z = tl.load(z_ptr + offsets, mask=mask)
+
+    # Fused: (x + y) * z
+    result = (x + y) * z
+
+    tl.store(output_ptr + offsets, result, mask=mask)
+""",
+    ),
+
+    # Cast + 具体算子融合
+    FusionPattern(
+        name="Cast to FP16 + MatMulV2",
+        category=FusionCategory.ELEMENT_FUSION,
+        operator_patterns=[
+            r"Cast.*",
+            r"MatMulV2"
+        ],
+        memory_saving=0.2,
+        speedup=1.15,
+        triton_complexity="简单",
+        description="将 FP32->FP16 转换融合到 MatMulV2 中",
+        ascend_op=None,
+    ),
 ]
 
 

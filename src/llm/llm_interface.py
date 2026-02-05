@@ -222,18 +222,137 @@ class ClaudeBackend(LLMInterface):
 
 class MockBackend(LLMInterface):
     """Mock 后端，用于测试"""
-    
+
     async def complete(
-        self, 
+        self,
         messages: List[Message],
         **kwargs
     ) -> LLMResponse:
         """返回 Mock 响应"""
-        return LLMResponse(
-            content="[Mock Response] This is a test response for development.",
-            model="mock",
-            usage={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
-        )
+        # 检查是否是 AIKG 代码生成请求
+        prompt = messages[0].content if messages else ""
+
+        if "Fusion Operator Generation Request" in prompt or "Triton" in prompt:
+            # 返回模拟的 Triton 代码
+            mock_triton_code = '''```python
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def fused_flash_attention(
+    q_ptr, k_ptr, v_ptr, output_ptr,
+    stride_qz, stride_qh, stride_qm, stride_qk,
+    stride_kz, stride_kh, stride_kn, stride_kk,
+    stride_vz, stride_vh, stride.vn, stride_vk,
+    stride_oz, stride_oh, stride_om, stride_ok,
+    Z, H, N, M,
+    BLOCK_M: tl.constexpr,
+    BLOCK_N: tl.constexpr,
+):
+    """
+    Flash Attention 融合算子实现
+
+    融合了以下操作:
+    1. Q @ K^T (注意力分数计算)
+    2. Softmax (归一化)
+    3. @ V (加权聚合)
+
+    使用 Tiling 技术减少 HBM 访问，提升性能。
+    """
+    # 获取程序 ID
+    pid = tl.program_id(axis=0)
+    pid_m = tl.program_id(axis=1)
+
+    # 计算 block 范围
+    m_start = pid_m * BLOCK_M
+    m_end = min(m_start + BLOCK_M, M)
+
+    # 加载 Q 块
+    q_offsets = (
+        m_start[:, None] * stride_qm +
+        tl.arange(0, BLOCK_M)[None, :] * stride_qm
+    )
+    q_block = tl.load(q_ptr + q_offsets)
+
+    # 计算 Q @ K^T
+    # ... 省略详细实现
+
+    # Softmax
+    # ... 省略详细实现
+
+    # 计算 @ V
+    # ... 省略详细实现
+
+    # 存储结果
+    output_offsets = (
+        m_start[:, None] * stride_om +
+        tl.arange(0, BLOCK_M)[None, :] * stride_om
+    )
+    tl.store(output_ptr + output_offsets, output_block)
+
+
+def flash_attention(q, k, v):
+    """
+    Flash Attention 前端接口
+
+    Args:
+        q: Query tensor [B, H, M, K]
+        k: Key tensor [B, H, N, K]
+        v: Value tensor [B, H, N, K]
+
+    Returns:
+        output: Attention output [B, H, M, K]
+    """
+    B, H, M, K = q.shape
+    N = k.shape[2]
+
+    # 配置 block 大小
+    BLOCK_M = 128
+    BLOCK_N = 128
+
+    # 输出 tensor
+    output = torch.empty_like(q)
+
+    # 启动 kernel
+    grid = (1, H, triton.cdiv(M, BLOCK_M))
+    fused_flash_attention[grid](
+        q, k, v, output,
+        q.stride(0), q.stride(1), q.stride(2), q.stride(3),
+        k.stride(0), k.stride(1), k.stride(2), k.stride(3),
+        v.stride(0), v.stride(1), v.stride(2), v.stride(3),
+        output.stride(0), output.stride(1), output.stride(2), output.stride(3),
+        B, H, N, M,
+        BLOCK_M=BLOCK_M,
+        BLOCK_N=BLOCK_N,
+    )
+
+    return output
+```
+
+**性能特点:**
+- 使用 Tiling 技术减少 HBM 访问
+- 融合 Q@K^T、Softmax、@V 三个操作
+- 适用于昇腾 NPU (Triton-Ascend 后端)
+- 预期性能提升: 5x (相比标准 Attention)
+
+**编译命令:**
+```bash
+python -c "import torch; from flash_attention_impl import flash_attention; print('OK')"
+```
+'''
+            return LLMResponse(
+                content=mock_triton_code,
+                model="mock-triton",
+                usage={"prompt_tokens": 500, "completion_tokens": 800, "total_tokens": 1300},
+            )
+        else:
+            # 默认简单响应
+            return LLMResponse(
+                content="[Mock Response] This is a test response for development.",
+                model="mock",
+                usage={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
+            )
 
 
 class OllamaBackend(LLMInterface):
