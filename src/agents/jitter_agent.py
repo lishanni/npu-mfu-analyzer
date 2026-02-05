@@ -11,7 +11,8 @@ import math
 
 import numpy as np
 
-from src.agents.base_agent import BaseAgent
+from src.agents.base_agent import BaseAgent, AnalysisResult
+from src.llm.llm_interface import LLMInterface
 
 logger = logging.getLogger(__name__)
 
@@ -370,112 +371,157 @@ class JitterDetector:
 class JitterAgent(BaseAgent):
     """
     抖动检测 Agent
-    
+
     专门识别和分析性能抖动问题
     """
-    
-    def __init__(self, llm_backend=None):
+
+    # 添加 Prompt 模板
+    PROMPT_TEMPLATE = """你是一个大模型训练性能专家。请分析以下抖动检测结果，给出专业的诊断和优化建议。
+
+## 抖动指标
+
+### 计算抖动
+- 标准差: {compute_jitter_std:.2f} us
+- 变异系数: {compute_jitter_cv:.2f}
+- 异常值数量: {compute_outliers}
+
+### 通信抖动
+- 标准差: {comm_jitter_std:.2f} us
+- 变异系数: {comm_jitter_cv:.2f}
+- 异常值数量: {comm_outliers}
+
+### 对齐抖动
+- 最大对齐偏差: {alignment_skew_max:.2f} us
+- 平均对齐偏差: {alignment_skew_avg:.2f} us
+
+### 跨 Rank 抖动
+- 跨 Rank 时间方差: {cross_rank_variance:.2f}
+- 慢 Rank: {slow_ranks}
+
+## 分析要求
+
+请基于以上指标，分析：
+1. 抖动的严重程度评估
+2. 可能的根本原因
+3. 具体的优化建议（优先级排序）
+"""
+
+    def __init__(
+        self,
+        llm: LLMInterface,
+        config: Optional[Dict[str, Any]] = None
+    ):
         super().__init__(
             name="JitterAgent",
-            description="检测计算、通信和对齐抖动，分析根本原因",
-            llm_backend=llm_backend,
+            llm=llm,
+            system_prompt="你是大模型训练性能分析专家，专注于识别和诊断性能抖动问题。",
+            config=config
         )
         self.detector = JitterDetector()
-    
-    async def analyze(self, profiling_data: Dict[str, Any]) -> Dict[str, Any]:
+
+    def get_prompt_template(self) -> str:
+        """获取 Prompt 模板"""
+        return self.PROMPT_TEMPLATE
+
+    async def analyze(self, profiling_data: Dict[str, Any]) -> AnalysisResult:
         """
         分析抖动
-        
+
         Args:
-            profiling_data: Profiling 数据，包含：
-                - operator_traces: 算子执行轨迹
-                - comm_events: 通信事件
-                - compute_events: 计算事件
-                - rank_durations: 各 rank 的 step 耗时
-                
+            profiling_data: Profiling 数据
+
         Returns:
-            分析结果字典
+            AnalysisResult
         """
-        operator_traces = profiling_data.get("operator_traces", {})
-        comm_events = profiling_data.get("comm_events", [])
-        compute_events = profiling_data.get("compute_events", [])
-        rank_durations = profiling_data.get("rank_durations", {})
-        host_events = profiling_data.get("host_events", [])
-        memory_events = profiling_data.get("memory_events", [])
-        
-        # 1. 检测计算抖动
-        compute_std, compute_cv, compute_outliers = self.detector.detect_compute_jitter(
-            operator_traces
-        )
-        
-        # 2. 检测通信抖动
-        comm_std, comm_cv, comm_outliers = self.detector.detect_communication_jitter(
-            comm_events
-        )
-        
-        # 3. 检测对齐抖动
-        max_skew, avg_skew = self.detector.detect_alignment_jitter(
-            compute_events, comm_events
-        )
-        
-        # 4. 检测跨 rank 抖动
-        cross_rank_var, slow_ranks = self.detector.detect_cross_rank_jitter(
-            rank_durations
-        )
-        
-        # 5. 构建指标
-        metrics = JitterMetrics(
-            compute_jitter_std=compute_std,
-            compute_jitter_cv=compute_cv,
-            compute_outliers=compute_outliers,
-            comm_jitter_std=comm_std,
-            comm_jitter_cv=comm_cv,
-            comm_outliers=comm_outliers,
-            alignment_skew_max=max_skew,
-            alignment_skew_avg=avg_skew,
-            cross_rank_variance=cross_rank_var,
-            slow_ranks=slow_ranks,
-        )
-        
-        # 6. 根因分析
-        metrics.root_causes = self.detector.analyze_root_causes(
-            metrics, host_events, memory_events
-        )
-        
-        # 7. 生成 Prompt
-        prompt = self._build_prompt(metrics)
-        
-        # 8. 调用 LLM（如果有）
-        llm_analysis = ""
-        if self.llm_backend:
-            try:
-                llm_analysis = await self.llm_backend.generate(prompt)
-            except Exception as e:
-                logger.warning(f"LLM analysis failed: {e}")
-                llm_analysis = "LLM 分析不可用"
-        
-        return {
-            "agent": self.name,
-            "metrics": metrics.to_dict(),
-            "analysis": llm_analysis,
-            "prompt": prompt,
-        }
-    
-    def _build_prompt(self, metrics: JitterMetrics) -> str:
-        """构建 LLM Prompt"""
-        prompt = f"""你是一个大模型训练性能专家。请分析以下抖动检测结果，给出专业的诊断和优化建议。
+        try:
+            # 提取数据
+            operator_traces = profiling_data.get("operator_traces", {})
+            comm_events = profiling_data.get("comm_events", [])
+            compute_events = profiling_data.get("compute_events", [])
+            rank_durations = profiling_data.get("rank_durations", {})
+            host_events = profiling_data.get("host_events", [])
+            memory_events = profiling_data.get("memory_events", [])
 
-{metrics.to_prompt_text()}
+            # 1. 检测计算抖动
+            compute_std, compute_cv, compute_outliers = self.detector.detect_compute_jitter(
+                operator_traces
+            )
 
-请从以下角度分析：
-1. 抖动的严重程度评估
-2. 最可能的根本原因
-3. 具体的优化措施（如调整调度器、优化通信、检查硬件等）
-4. 预期的性能提升空间
+            # 2. 检测通信抖动
+            comm_std, comm_cv, comm_outliers = self.detector.detect_communication_jitter(
+                comm_events
+            )
 
-请给出简洁、可操作的建议。"""
-        
-        return prompt
+            # 3. 检测对齐抖动
+            max_skew, avg_skew = self.detector.detect_alignment_jitter(
+                compute_events, comm_events
+            )
+
+            # 4. 检测跨 rank 抖动
+            cross_rank_var, slow_ranks = self.detector.detect_cross_rank_jitter(
+                rank_durations
+            )
+
+            # 5. 构建指标
+            metrics = JitterMetrics(
+                compute_jitter_std=compute_std,
+                compute_jitter_cv=compute_cv,
+                compute_outliers=compute_outliers,
+                comm_jitter_std=comm_std,
+                comm_jitter_cv=comm_cv,
+                comm_outliers=comm_outliers,
+                alignment_skew_max=max_skew,
+                alignment_skew_avg=avg_skew,
+                cross_rank_variance=cross_rank_var,
+                slow_ranks=slow_ranks,
+            )
+
+            # 6. 根因分析
+            metrics.root_causes = self.detector.analyze_root_causes(
+                metrics, host_events, memory_events
+            )
+
+            # 7. 生成 Prompt
+            data_summary = self._format_data_summary(metrics)
+            prompt = self.format_prompt(self.PROMPT_TEMPLATE, data_summary=data_summary)
+
+            # 8. 调用 LLM
+            response = await self.call_llm(prompt)
+
+            return AnalysisResult(
+                agent_name=self.name,
+                success=True,
+                summary="Jitter 分析完成",
+                details={"metrics": metrics.to_dict()},
+                recommendations=self._extract_recommendations(response),
+                raw_response=response,
+            )
+
+        except Exception as e:
+            logger.error(f"Jitter analysis failed: {e}")
+            return AnalysisResult(
+                agent_name=self.name,
+                success=False,
+                summary="Jitter 分析失败",
+                error=str(e),
+            )
+
+    def _format_data_summary(self, metrics: JitterMetrics) -> str:
+        """格式化数据摘要"""
+        lines = [
+            f"- 计算抖动标准差: {metrics.compute_jitter_std:.2f} us",
+            f"- 计算抖动变异系数: {metrics.compute_jitter_cv:.2f}",
+            f"- 计算异常值数量: {metrics.compute_outliers}",
+            f"- 通信抖动标准差: {metrics.comm_jitter_std:.2f} us",
+            f"- 通信抖动变异系数: {metrics.comm_jitter_cv:.2f}",
+            f"- 通信异常值数量: {metrics.comm_outliers}",
+            f"- 最大对齐偏差: {metrics.alignment_skew_max:.2f} us",
+            f"- 平均对齐偏差: {metrics.alignment_skew_avg:.2f} us",
+            f"- 跨 Rank 时间方差: {metrics.cross_rank_variance:.2f}",
+        ]
+        if metrics.slow_ranks:
+            lines.append(f"- 慢 Rank: {metrics.slow_ranks}")
+        return "\n".join(lines)
 
 
 def detect_jitter_from_loader(loader) -> JitterMetrics:
