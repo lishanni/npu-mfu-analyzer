@@ -79,18 +79,22 @@ class ReportGenerator:
         profiling_summary: Any,
         agent_results: Dict[str, Any],
         advisor_report: Optional[Any] = None,
+        mfu_metrics: Any = None,
+        roofline_analysis: Any = None,
         format: Optional[ReportFormat] = None,
     ) -> str:
         """
         从分析结果生成报告
-        
+
         Args:
             profiling_path: Profiling 数据路径
             profiling_summary: ProfilingSummary 对象
             agent_results: 各 Agent 分析结果
             advisor_report: AdvisorReport 对象（可选）
+            mfu_metrics: MFUMetrics 对象（可选）
+            roofline_analysis: Roofline 分析结果（可选）
             format: 报告格式
-            
+
         Returns:
             报告内容字符串
         """
@@ -110,10 +114,24 @@ class ReportGenerator:
         compute_ratio = compute_time / total_time if total_time > 0 else 0
         comm_ratio = comm_time / total_time if total_time > 0 else 0
         idle_ratio = free_time / total_time if total_time > 0 else 0
-        
-        # 估算 MFU
-        estimated_mfu = compute_ratio * 0.8  # 简化估算
-        
+
+        # 使用 MFU 计算结果，如果没有则回退到简化估算
+        if mfu_metrics and hasattr(mfu_metrics, 'overall_mfu'):
+            estimated_mfu = mfu_metrics.overall_mfu
+            peak_tflops = mfu_metrics.peak_flops / 1e12
+        else:
+            estimated_mfu = compute_ratio * 0.8  # 简化估算
+            peak_tflops = 280.0  # 默认 Ascend 910B 峰值
+
+        # 添加 Roofline 分析数据
+        theoretical_max_mfu = None
+        roof_efficiency = None
+        bound_type = None
+        if roofline_analysis:
+            theoretical_max_mfu = roofline_analysis.get('theoretical_max_mfu_percent', estimated_mfu * 100)
+            roof_efficiency = roofline_analysis.get('roof_efficiency_percent', 0)
+            bound_type = roofline_analysis.get('bound_type', 'unknown')
+
         # 确定瓶颈
         main_bottleneck = ""
         bottleneck_impact = 0.0
@@ -123,13 +141,17 @@ class ReportGenerator:
         elif comm_ratio > 0.3:
             main_bottleneck = "通信开销过大"
             bottleneck_impact = comm_ratio * 100
+        elif bound_type == 'memory_bound':
+            main_bottleneck = f"内存带宽受限 (Roofline分析)"
+            bottleneck_impact = (100 - roof_efficiency) if roof_efficiency else 0
         
         # 提取各 Agent 分析文本
         timeline_analysis = ""
         operator_analysis = ""
         memory_analysis = ""
         communication_analysis = ""
-        
+        jitter_analysis = ""
+
         for name, result in agent_results.items():
             if hasattr(result, "raw_response"):
                 text = result.raw_response or result.summary
@@ -137,7 +159,7 @@ class ReportGenerator:
                 text = result.get("raw_response", result.get("summary", ""))
             else:
                 text = str(result)
-            
+
             if "timeline" in name.lower():
                 timeline_analysis = text
             elif "operator" in name.lower():
@@ -146,6 +168,8 @@ class ReportGenerator:
                 memory_analysis = text
             elif "communication" in name.lower() or "comm" in name.lower():
                 communication_analysis = text
+            elif "jitter" in name.lower():
+                jitter_analysis = text
         
         # 提取建议
         suggestions = []
@@ -169,16 +193,23 @@ class ReportGenerator:
             step_count=summary_dict.get("step_count", 0),
             avg_step_time_ms=summary_dict.get("avg_step_time", 0) / 1000,
             estimated_mfu=estimated_mfu,
+            peak_tflops=peak_tflops if 'peak_tflops' in locals() else 280.0,
+            actual_tflops=estimated_mfu * peak_tflops if 'peak_tflops' in locals() else 0,
+            theoretical_max_mfu=theoretical_max_mfu if theoretical_max_mfu else 0,
+            roof_bound_type=bound_type or "",
+            roof_efficiency=roof_efficiency if roof_efficiency else 0,
+            ridge_point=roofline_analysis.get('ridge_point', 0) if roofline_analysis else 0,
             compute_ratio=compute_ratio,
             comm_ratio=comm_ratio,
             idle_ratio=idle_ratio,
             overlap_ratio=summary_dict.get("overlap_ratio", 0),
             main_bottleneck=main_bottleneck,
             bottleneck_impact=bottleneck_impact,
-            timeline_analysis=timeline_analysis[:500] if timeline_analysis else "",
-            operator_analysis=operator_analysis[:500] if operator_analysis else "",
-            memory_analysis=memory_analysis[:500] if memory_analysis else "",
-            communication_analysis=communication_analysis[:500] if communication_analysis else "",
+            timeline_analysis=timeline_analysis if timeline_analysis else "",
+            operator_analysis=operator_analysis if operator_analysis else "",
+            memory_analysis=memory_analysis if memory_analysis else "",
+            communication_analysis=communication_analysis if communication_analysis else "",
+            jitter_analysis=jitter_analysis if jitter_analysis else "",
             suggestions=suggestions,
         )
         
@@ -219,6 +250,12 @@ class ReportGenerator:
             step_count=data.get("step_count", 0),
             avg_step_time_ms=data.get("avg_step_time_ms", 0),
             estimated_mfu=data.get("estimated_mfu", 0),
+            peak_tflops=data.get("peak_tflops", 0),
+            actual_tflops=data.get("actual_tflops", 0),
+            theoretical_max_mfu=data.get("theoretical_max_mfu", 0),
+            roof_bound_type=data.get("roof_bound_type", ""),
+            roof_efficiency=data.get("roof_efficiency", 0),
+            ridge_point=data.get("ridge_point", 0),
             compute_ratio=data.get("compute_ratio", 0),
             comm_ratio=data.get("comm_ratio", 0),
             idle_ratio=data.get("idle_ratio", 0),
@@ -229,6 +266,7 @@ class ReportGenerator:
             operator_analysis=data.get("operator_analysis", ""),
             memory_analysis=data.get("memory_analysis", ""),
             communication_analysis=data.get("communication_analysis", ""),
+            jitter_analysis=data.get("jitter_analysis", ""),
             suggestions=data.get("suggestions", []),
         )
     

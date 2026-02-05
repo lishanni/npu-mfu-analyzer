@@ -99,7 +99,7 @@ def analyze(
 
             # 根据格式输出报告
             if format == "html":
-                output_path = _generate_html_report(profiling_path, output)
+                output_path = _generate_html_report(profiling_path, output, report)
                 if output_path:
                     click.echo(f"📄 HTML 报告已保存到: {output_path}")
                 else:
@@ -153,13 +153,14 @@ async def _run_analysis(profiling_path: str, backend: str, model: Optional[str])
     return await orchestrator.run()
 
 
-def _generate_html_report(profiling_path: str, output: Optional[str]) -> Optional[Path]:
+def _generate_html_report(profiling_path: str, output: Optional[str], report: Any = None) -> Optional[Path]:
     """
     生成 HTML 格式报告
 
     Args:
         profiling_path: Profiling 数据路径
         output: 输出路径（可选）
+        report: AnalysisReport 对象（可选，包含 Agent 分析结果）
 
     Returns:
         输出文件路径，失败返回 None
@@ -181,12 +182,18 @@ def _generate_html_report(profiling_path: str, output: Optional[str]) -> Optiona
             timeline_data=None
         )
 
-        # 3. 生成 HTML
+        # 3. 提取 Agent 分析结果
+        agent_results = {}
+        if report and hasattr(report, 'agent_results'):
+            agent_results = report.agent_results
+
+        # 4. 生成 HTML
         html = _build_html_report(
             profiling_path,
             top_kernels,
             fusion_opportunities,
-            info
+            info,
+            agent_results
         )
 
         # 4. 确定输出路径
@@ -214,7 +221,7 @@ def _generate_html_report(profiling_path: str, output: Optional[str]) -> Optiona
         return None
 
 
-def _build_html_report(profiling_path: str, top_kernels: list, fusion_opportunities: list, info) -> str:
+def _build_html_report(profiling_path: str, top_kernels: list, fusion_opportunities: list, info, agent_results: dict = None) -> str:
     """构建 HTML 报告内容"""
     from datetime import datetime
 
@@ -521,10 +528,80 @@ def _build_html_report(profiling_path: str, top_kernels: list, fusion_opportunit
                 <p>检测到 <strong>{len(fusion_opportunities)}</strong> 个融合机会，按端到端加速效果排序：</p>
 {fusion_cards_html}
             </div>
+'''
 
+    # 添加 Agent 详细分析章节
+    if agent_results:
+        html += '''
             <div class="section">
-                <h2>4. 优化建议</h2>
-                <h3>4.1 高优先级优化 (端到端加速 > 5%)</h3>
+                <h2>4. Agent 详细分析</h2>
+'''
+
+        # Timeline Agent 分析
+        if 'timeline' in agent_results:
+            result = agent_results['timeline']
+            analysis_text = result.raw_response if hasattr(result, 'raw_response') and result.raw_response else (result.summary if hasattr(result, 'summary') else '分析失败')
+            html += f'''
+                <h3>4.1 Timeline 分析</h3>
+                <div class="card">
+                    <pre style="white-space: pre-wrap; font-family: monospace;">{analysis_text[:2000]}</pre>
+                </div>
+'''
+
+        # Operator Agent 分析
+        if 'operator' in agent_results:
+            result = agent_results['operator']
+            analysis_text = result.raw_response if hasattr(result, 'raw_response') and result.raw_response else (result.summary if hasattr(result, 'summary') else '分析失败')
+            html += f'''
+                <h3>4.2 算子分析</h3>
+                <div class="card">
+                    <pre style="white-space: pre-wrap; font-family: monospace;">{analysis_text[:2000]}</pre>
+                </div>
+'''
+
+        # Memory Agent 分析
+        if 'memory' in agent_results:
+            result = agent_results['memory']
+            analysis_text = result.raw_response if hasattr(result, 'raw_response') and result.raw_response else (result.summary if hasattr(result, 'summary') else '分析失败')
+            html += f'''
+                <h3>4.3 内存分析</h3>
+                <div class="card">
+                    <pre style="white-space: pre-wrap; font-family: monospace;">{analysis_text[:2000]}</pre>
+                </div>
+'''
+
+        # Communication Agent 分析
+        if 'communication' in agent_results:
+            result = agent_results['communication']
+            analysis_text = result.raw_response if hasattr(result, 'raw_response') and result.raw_response else (result.summary if hasattr(result, 'summary') else '分析失败')
+            html += f'''
+                <h3>4.4 通信分析</h3>
+                <div class="card">
+                    <pre style="white-space: pre-wrap; font-family: monospace;">{analysis_text[:2000]}</pre>
+                </div>
+'''
+
+        # Jitter Agent 分析
+        if 'jitter' in agent_results:
+            result = agent_results['jitter']
+            analysis_text = result.raw_response if hasattr(result, 'raw_response') and result.raw_response else (result.summary if hasattr(result, 'summary') else '分析失败')
+            html += f'''
+                <h3>4.5 抖动分析</h3>
+                <div class="card">
+                    <pre style="white-space: pre-wrap; font-family: monospace;">{analysis_text[:2000]}</pre>
+                </div>
+'''
+
+        html += '''
+            </div>
+'''
+
+    # 更新后续章节编号
+    next_section_num = 5 if agent_results else 4
+    html += f'''
+            <div class="section">
+                <h2>{next_section_num}. 优化建议</h2>
+                <h3>{next_section_num}.1 高优先级优化 (端到端加速 > 5%)</h3>
 '''
 
     # 添加高优先级优化建议
@@ -543,8 +620,8 @@ def _build_html_report(profiling_path: str, top_kernels: list, fusion_opportunit
         html += '<p>暂无高优先级优化建议。</p>'
 
     # 添加通用优化建议
-    html += '''
-                <h3>4.2 优化方向建议</h3>
+    html += f'''
+                <h3>{next_section_num}.2 优化方向建议</h3>
                 <ul>
                     <li><strong>算子融合</strong>: 使用昇腾原生融合算子（如 FlashAttention、FusedMatMulBiasAct）</li>
                     <li><strong>数据类型优化</strong>: 统一使用 FP16/BF16 数据类型，减少不必要的数据类型转换</li>
@@ -554,15 +631,15 @@ def _build_html_report(profiling_path: str, top_kernels: list, fusion_opportunit
             </div>
 
             <div class="section">
-                <h2>5. 技术细节</h2>
-                <h3>5.1 融合分析方法</h3>
+                <h2>{next_section_num + 1}. 技术细节</h2>
+                <h3>{next_section_num + 1}.1 融合分析方法</h3>
                 <ul>
                     <li><strong>全局分析</strong>: 分析所有算子，不局限于 Top 10</li>
                     <li><strong>端到端加速计算</strong>: T_new = T_total - t_op + t_op/speedup</li>
                     <li><strong>融合模式匹配</strong>: 基于算子名称和执行序列</li>
                 </ul>
 
-                <h3>5.2 昇腾融合算子映射</h3>
+                <h3>{next_section_num + 1}.2 昇腾融合算子映射</h3>
                 <table>
                     <thead>
                         <tr>

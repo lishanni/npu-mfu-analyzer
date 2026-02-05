@@ -16,6 +16,7 @@ from src.agents.timeline_agent import TimelineAgent
 from src.agents.operator_agent import OperatorAgent
 from src.agents.memory_agent import MemoryAgent
 from src.agents.communication_agent import CommunicationAgent
+from src.agents.jitter_agent import JitterAgent
 from src.agents.advisor_agent import AdvisorAgent
 from src.data_loader.profiling_loader import ProfilingLoader
 from src.data_loader.data_summarizer import DataSummarizer, ProfilingSummary
@@ -106,7 +107,8 @@ class Orchestrator:
         self.agents["operator"] = OperatorAgent(self.llm, self.config)
         self.agents["memory"] = MemoryAgent(self.llm, self.config)
         self.agents["communication"] = CommunicationAgent(self.llm, self.config)
-        
+        self.agents["jitter"] = JitterAgent(self.llm, self.config)
+
         # Advisor Agent 单独保存，用于最终综合分析
         self.advisor = AdvisorAgent(self.llm, self.config)
         
@@ -140,19 +142,25 @@ class Orchestrator:
             # 2. 生成数据摘要
             profiling_summary = self.summarizer.summarize()
             logger.info(f"Generated summary: {profiling_summary.step_count} steps")
-            
+
+            # 2.5. 计算 MFU 和 Roofline 分析
+            mfu_metrics = self._calculate_mfu()
+            roofline_analysis = self._analyze_roofline()
+
             # 3. 并行执行各 Agent 分析
             agent_results = await self._run_agents(profiling_summary)
-            
+
             # 4. 使用 Advisor Agent 生成综合分析
             advisor_result = await self._run_advisor(profiling_summary, agent_results)
-            
+
             # 5. 生成最终报告
             final_report = self.report_generator.generate_from_analysis(
                 profiling_path=self.profiling_path,
                 profiling_summary=profiling_summary,
                 agent_results=agent_results,
                 advisor_report=advisor_result.details.get("advisor_report") if advisor_result.success else None,
+                mfu_metrics=mfu_metrics,
+                roofline_analysis=roofline_analysis,
                 format=output_format,
             )
             
@@ -305,6 +313,71 @@ class Orchestrator:
                         recommendations.append(rec)
         
         return recommendations[:20]  # 最多20条
+
+    def _calculate_mfu(self):
+        """计算 MFU 指标"""
+        try:
+            from src.analyzers.mfu_calculator import MFUCalculator, ChipInfo
+            import pandas as pd
+
+            # 获取芯片信息
+            chip_info = ChipInfo.from_profiling_path(self.profiling_path)
+            if not chip_info.is_valid():
+                chip_info = ChipInfo.default_ascend_910b()
+
+            calculator = MFUCalculator(chip_info=chip_info)
+
+            # 获取算子数据
+            operators_df = self.loader.get_operator_details()
+            if operators_df is None or operators_df.empty:
+                logger.warning("No operator data for MFU calculation")
+                return None
+
+            # 执行 MFU 分析
+            mfu_metrics = calculator.analyze_operators(operators_df)
+            logger.info(f"MFU Analysis: overall={mfu_metrics.overall_mfu*100:.1f}%, "
+                       f"peak={mfu_metrics.peak_flops/1e12:.1f} TFLOPS")
+            return mfu_metrics
+
+        except Exception as e:
+            logger.error(f"MFU calculation failed: {e}")
+            return None
+
+    def _analyze_roofline(self):
+        """执行 Roofline 分析"""
+        try:
+            from src.roofline.roofline_model import RooflineModeler, PrecisionType
+
+            # 使用默认 Atlas A2 280T 规格
+            modeler = RooflineModeler(hardware_name="atlas_a2_280t")
+
+            # 简化版 Roofline 分析 - 基于整体统计数据
+            summary_dict = self.summarizer.summarize().to_dict()
+
+            # 估算模型参数
+            step_time_ms = summary_dict.get("avg_step_time", 0) / 1000
+
+            # 简化假设：大模型训练的典型计算强度
+            model_flops = 1e15  # 假设 1P FLOPS per step
+            model_memory_bytes = 1e11  # 假设 100GB 内存访问
+
+            # 执行 Roofline 分析
+            result = modeler.estimate_theoretical_mfu(
+                model_flops=model_flops,
+                model_memory_bytes=model_memory_bytes,
+                step_time_ms=step_time_ms,
+                num_devices=summary_dict.get("rank_count", 1),
+                precision=PrecisionType.FP16,
+            )
+
+            logger.info(f"Roofline Analysis: bound={result['bound_type']}, "
+                       f"actual_mfu={result['actual_mfu_percent']:.1f}%, "
+                       f"theoretical_max={result['theoretical_max_mfu_percent']:.1f}%")
+            return result
+
+        except Exception as e:
+            logger.error(f"Roofline analysis failed: {e}")
+            return None
 
 
 async def run_analysis(profiling_path: str, llm_backend: str = "openai") -> AnalysisReport:

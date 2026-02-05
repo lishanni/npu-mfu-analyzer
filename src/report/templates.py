@@ -15,28 +15,39 @@ class ReportData:
     title: str = "昇腾 NPU 性能分析报告"
     generated_at: str = ""
     profiling_path: str = ""
-    
+
     # 概览
     rank_count: int = 1
     step_count: int = 0
     avg_step_time_ms: float = 0.0
     estimated_mfu: float = 0.0
-    
+
+    # MFU 相关
+    peak_tflops: float = 0.0
+    actual_tflops: float = 0.0
+    theoretical_max_mfu: float = 0.0
+
+    # Roofline 相关
+    roof_bound_type: str = ""
+    roof_efficiency: float = 0.0
+    ridge_point: float = 0.0
+
     # 时间分布
     compute_ratio: float = 0.0
     comm_ratio: float = 0.0
     idle_ratio: float = 0.0
     overlap_ratio: float = 0.0
-    
+
     # 瓶颈
     main_bottleneck: str = ""
     bottleneck_impact: float = 0.0
-    
+
     # 详细分析
     timeline_analysis: str = ""
     operator_analysis: str = ""
     memory_analysis: str = ""
     communication_analysis: str = ""
+    jitter_analysis: str = ""
     
     # 建议
     suggestions: List[Dict[str, Any]] = None
@@ -46,6 +57,16 @@ class ReportData:
             self.generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if self.suggestions is None:
             self.suggestions = []
+
+    def _get_bound_type_name(self) -> str:
+        """获取受限类型中文名"""
+        bound_map = {
+            "compute_bound": "计算受限",
+            "memory_bound": "内存带宽受限",
+            "communication_bound": "通信受限",
+            "balanced": "平衡点附近",
+        }
+        return bound_map.get(self.roof_bound_type, self.roof_bound_type)
 
 
 class MarkdownTemplate:
@@ -65,7 +86,15 @@ class MarkdownTemplate:
 | Rank 数量 | {rank_count} |
 | Step 数量 | {step_count} |
 | 平均 Step 时间 | {avg_step_time_ms:.2f} ms |
-| 估算 MFU | {mfu_pct:.1f}% |
+
+### MFU 分析
+
+| 指标 | 数值 |
+|------|------|
+| 实际 MFU | {mfu_pct:.1f}% |
+| 芯片峰值算力 | {peak_tflops:.1f} TFLOPS |
+| 实际算力 | {actual_tflops:.1f} TFLOPS |
+{roofline_section}
 
 ### 时间分布
 
@@ -98,6 +127,10 @@ class MarkdownTemplate:
 ### 2.4 通信分析
 
 {communication_analysis}
+
+### 2.5 抖动分析
+
+{jitter_analysis}
 
 ---
 
@@ -141,7 +174,10 @@ class MarkdownTemplate:
         
         # 生成建议部分
         suggestions_section = cls._render_suggestions(data.suggestions)
-        
+
+        # 生成 Roofline 分析部分
+        roofline_section = cls._render_roofline(data)
+
         return cls.TEMPLATE.format(
             title=data.title,
             generated_at=data.generated_at,
@@ -150,6 +186,9 @@ class MarkdownTemplate:
             step_count=data.step_count,
             avg_step_time_ms=data.avg_step_time_ms,
             mfu_pct=data.estimated_mfu * 100,
+            peak_tflops=data.peak_tflops,
+            actual_tflops=data.actual_tflops,
+            roofline_section=roofline_section,
             compute_bar=compute_bar,
             compute_pct=data.compute_ratio * 100,
             comm_bar=comm_bar,
@@ -162,6 +201,7 @@ class MarkdownTemplate:
             operator_analysis=data.operator_analysis or "暂无分析数据",
             memory_analysis=data.memory_analysis or "暂无分析数据",
             communication_analysis=data.communication_analysis or "暂无分析数据",
+            jitter_analysis=data.jitter_analysis or "暂无分析数据",
             suggestions_section=suggestions_section,
         )
     
@@ -211,6 +251,20 @@ class MarkdownTemplate:
                     
                     lines.append("")
         
+        return "\n".join(lines)
+
+    @classmethod
+    def _render_roofline(cls, data: ReportData) -> str:
+        """渲染 Roofline 分析部分"""
+        if not data.roof_bound_type:
+            return "| 理论上限 MFU | - |"
+
+        lines = [
+            f"| 理论上限 MFU | {data.theoretical_max_mfu:.1f}% |",
+            f"| Roofline 效率 | {data.roof_efficiency:.1f}% |",
+            f"| 受限类型 | {data._get_bound_type_name()} |",
+            f"| 脊点 | {data.ridge_point:.1f} FLOP/Byte |",
+        ]
         return "\n".join(lines)
 
 
@@ -496,6 +550,12 @@ class HTMLTemplate:
         <p>{data.timeline_analysis or '暂无数据'}</p>
         <h3>算子分析</h3>
         <p>{data.operator_analysis or '暂无数据'}</p>
+        <h3>内存分析</h3>
+        <p>{data.memory_analysis or '暂无数据'}</p>
+        <h3>通信分析</h3>
+        <p>{data.communication_analysis or '暂无数据'}</p>
+        <h3>抖动分析</h3>
+        <p>{data.jitter_analysis or '暂无数据'}</p>
         """
         
         return cls.TEMPLATE.format(
