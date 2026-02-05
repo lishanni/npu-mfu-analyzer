@@ -137,6 +137,30 @@ class BaseAgent(ABC):
     def __repr__(self):
         return f"<{self.__class__.__name__}(name={self.name})>"
 
+    def _extract_recommendations(self, response: str) -> List[str]:
+        """
+        从 LLM 响应中提取建议
+
+        Args:
+            response: LLM 响应文本
+
+        Returns:
+            建议列表
+        """
+        recommendations = []
+
+        # 简单的建议提取逻辑
+        lines = response.split("\n")
+        in_recommendation = False
+
+        for line in lines:
+            if "建议" in line or "优化" in line:
+                in_recommendation = True
+            if in_recommendation and line.strip().startswith(("-", "*", "1", "2", "3", "4", "5")):
+                recommendations.append(line.strip().lstrip("-*0123456789. "))
+
+        return recommendations[:10]  # 最多10条
+
 
 class TimelineAgent(BaseAgent):
     """Timeline 分析 Agent"""
@@ -218,22 +242,6 @@ class TimelineAgent(BaseAgent):
                 lines.append(f"- {op.get('name', 'unknown')}: {op.get('dur', 0) / 1000:.2f} ms")
         
         return "\n".join(lines) if lines else "无数据"
-    
-    def _extract_recommendations(self, response: str) -> List[str]:
-        """从响应中提取建议"""
-        recommendations = []
-        
-        # 简单的建议提取逻辑
-        lines = response.split("\n")
-        in_recommendation = False
-        
-        for line in lines:
-            if "建议" in line or "优化" in line:
-                in_recommendation = True
-            if in_recommendation and line.strip().startswith(("-", "*", "1", "2", "3")):
-                recommendations.append(line.strip().lstrip("-*0123456789. "))
-        
-        return recommendations[:10]  # 最多10条
 
 
 class OperatorAgent(BaseAgent):
