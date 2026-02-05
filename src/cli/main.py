@@ -942,6 +942,121 @@ def generate(
 
 
 @cli.command()
+@click.argument("profiling_path", type=click.Path(exists=True))
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    default="./integration_output",
+    help="集成输出目录（默认: ./integration_output）"
+)
+@click.option(
+    "--patterns",
+    type=str,
+    default="add,mul,slice,strided",
+    help="融合模式列表（逗号分隔，默认: add,mul,slice,strided）"
+)
+@click.option(
+    "--time-window",
+    type=int,
+    default=100,
+    help="时间窗口（微秒，默认: 100）"
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=50,
+    help="分析的最大调用数（默认: 50）"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="详细输出"
+)
+def integrate(
+    profiling_path: str,
+    output: str,
+    patterns: str,
+    time_window: int,
+    limit: int,
+    verbose: bool
+):
+    """
+    分析 Profiling 数据并生成融合算子集成方案
+
+    完整的自动化工作流：
+    1. 分析 Trace 数据中的 API 调用栈
+    2. 定位需要替换的算子调用源代码位置
+    3. 生成自定义融合算子代码
+    4. 生成集成到训练脚本的补丁和指南
+
+    PROFILING_PATH: Profiling 数据目录路径
+
+    示例:
+        npu-analyzer integrate /path/to/profiling
+        npu-analyzer integrate /path/to/profiling -o ./patches
+        npu-analyzer integrate /path/to/profiling --patterns add,mul --time-window 50
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    from src.cli.integration_workflow import IntegrationWorkflow
+
+    click.echo(click.style("🔧 启动融合算子集成工作流", fg="cyan", bold=True))
+    click.echo(f"   Profiling 数据: {profiling_path}")
+    click.echo(f"   输出目录: {output}")
+    click.echo(f"   融合模式: {patterns}")
+    click.echo(f"   时间窗口: {time_window} μs")
+    click.echo("")
+
+    try:
+        # 解析融合模式
+        fusion_patterns = [p.strip() for p in patterns.split(",")]
+
+        # 创建工作流
+        workflow = IntegrationWorkflow(
+            profiling_path=profiling_path,
+            output_dir=output
+        )
+
+        # 执行工作流
+        result = workflow.run(
+            fusion_patterns=fusion_patterns,
+            time_window_ns=time_window * 1000,  # 转换为纳秒
+            limit=limit
+        )
+
+        # 输出结果
+        if result["success"]:
+            click.echo("\n" + "=" * 70)
+            click.echo(click.style("📊 集成工作流结果摘要", fg="cyan", bold=True))
+            click.echo("=" * 70)
+            click.echo(click.style(f"✓ 找到融合模式: {result['fusion_patterns_found']} 个", fg="green"))
+            click.echo(click.style(f"✓ 生成算子代码: {result['operators_generated']} 个", fg="green"))
+            click.echo(click.style(f"✓ 输出目录: {result['output_dir']}", fg="blue"))
+            click.echo("")
+            click.echo(click.style("📁 生成的文件:", fg="yellow", bold=True))
+            click.echo(f"  - 自定义算子代码: *_operator.py")
+            click.echo(f"  - 集成补丁: *_patch.txt")
+            click.echo(f"  - 集成指南: {result['integration_guide']}")
+            click.echo("")
+            click.echo(click.style("💡 下一步:", fg="yellow", bold=True))
+            click.echo(f"   1. 查看集成指南: cat {result['integration_guide']}")
+            click.echo(f"   2. 复制算子代码到项目: cp {result['output_dir']}/*_operator.py /path/to/project/")
+            click.echo(f"   3. 按照指南修改训练脚本")
+            click.echo("=" * 70)
+        else:
+            click.echo(click.style(f"❌ 工作流失败: {result.get('error', 'Unknown error')}", fg="red"))
+            sys.exit(1)
+
+    except Exception as e:
+        click.echo(click.style(f"❌ 发生错误: {e}", fg="red"))
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
 @click.option(
     "--host", "-h",
     type=str,
