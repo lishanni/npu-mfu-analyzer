@@ -8,6 +8,7 @@
 | `DEEPSEEK_API_KEY` | DeepSeek API Key | - |
 | `OPENAI_API_KEY` | OpenAI API Key | - |
 | `ANTHROPIC_API_KEY` | Claude API Key | - |
+| `ANTHROPIC_BASE_URL` | Claude API 自定义地址（用于代理或兼容API） | - |
 | `NPU_ANALYZER_DATA_DIR` | 数据存储目录 | `./data` |
 
 ## 配置文件
@@ -128,6 +129,28 @@ llm:
     api_key: ${OPENAI_API_KEY}
     temperature: 0.1
     max_tokens: 4096
+```
+
+### Claude API
+
+```yaml
+llm:
+  backend: claude
+  claude:
+    model: claude-3-opus-20240229
+    api_key: ${ANTHROPIC_API_KEY}
+    base_url: ${ANTHROPIC_BASE_URL}  # 可选，支持自定义endpoint或代理
+    max_tokens: 4096
+```
+
+**使用兼容API（如智谱GLM）**：
+```bash
+# 设置环境变量
+export ANTHROPIC_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+export ANTHROPIC_API_KEY="your_api_key"
+
+# 使用
+npu-analyzer analyze /path/to/profiling --backend claude -m GLM-4.7
 ```
 
 ### Mock (测试用)

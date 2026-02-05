@@ -50,6 +50,12 @@ npu-analyzer info /path/to/profiling
 # 完整分析（使用 Ollama）
 npu-analyzer analyze /path/to/profiling --backend ollama
 
+# 使用 Claude API
+npu-analyzer analyze /path/to/profiling --backend claude -m claude-3-opus-20240229
+
+# 使用 DeepSeek API
+npu-analyzer analyze /path/to/profiling --backend deepseek
+
 # 启动 Web 界面
 npu-analyzer web --port 8000
 ```
@@ -88,7 +94,7 @@ asyncio.run(analyze())
 ├─────────────────────────────────────────────────────────────────┤
 │  Data Loader │ Hardware Registry │ Pattern Matcher │ Topology  │
 ├─────────────────────────────────────────────────────────────────┤
-│  LLM Backend: Ollama │ DeepSeek │ OpenAI │ Mock                │
+│  LLM Backend: Ollama │ DeepSeek │ OpenAI │ Claude │ Mock       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
