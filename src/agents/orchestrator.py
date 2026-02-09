@@ -18,6 +18,7 @@ from src.agents.memory_agent import MemoryAgent
 from src.agents.communication_agent import CommunicationAgent
 from src.agents.jitter_agent import JitterAgent
 from src.agents.advisor_agent import AdvisorAgent
+from src.agents.detailed_operator_agent import DetailedOperatorAgent
 from src.data_loader.profiling_loader import ProfilingLoader
 from src.data_loader.data_summarizer import DataSummarizer, ProfilingSummary
 from src.report.report_generator import ReportGenerator, ReportFormat
@@ -111,9 +112,14 @@ class Orchestrator:
         self.agents["communication"] = CommunicationAgent(self.llm, self.config)
         self.agents["jitter"] = JitterAgent(self.llm, self.config)
 
+        # 新增：详细算子分析 Agent（仅在检测到 AIC metrics 时启用）
+        if self._check_aic_metrics_available():
+            self.agents["detailed_operator"] = DetailedOperatorAgent(self.llm, self.config)
+            logger.info("DetailedOperatorAgent enabled (AIC metrics detected)")
+
         # Advisor Agent 单独保存，用于最终综合分析
         self.advisor = AdvisorAgent(self.llm, self.config)
-        
+
         # 报告生成器
         self.report_generator = ReportGenerator()
     
@@ -149,10 +155,24 @@ class Orchestrator:
             mfu_metrics = self._calculate_mfu()
             roofline_analysis = self._analyze_roofline()
 
-            # 3. 并行执行各 Agent 分析
-            agent_results = await self._run_agents(profiling_summary)
+            # 3. 检查是否有 AIC metrics 数据
+            has_aic_metrics = self._check_aic_metrics_available()
 
-            # 4. 使用 Advisor Agent 生成综合分析
+            # 4. 准备 Agent 数据
+            agent_data = profiling_summary.to_dict()
+            agent_data["profiling_path"] = self.profiling_path
+
+            # 如果有 AIC metrics，添加 top operators 用于详细分析
+            if has_aic_metrics:
+                top_kernels = self.loader.get_top_kernels(top_n=20)
+                if top_kernels:
+                    agent_data["top_operators"] = top_kernels
+                    logger.info(f"AIC metrics detected, enabling detailed operator analysis for {len(top_kernels)} operators")
+
+            # 5. 并行执行各 Agent 分析
+            agent_results = await self._run_agents(agent_data)
+
+            # 6. 使用 Advisor Agent 生成综合分析
             advisor_result = await self._run_advisor(profiling_summary, agent_results)
 
             # 5. 生成最终报告
@@ -217,17 +237,22 @@ class Orchestrator:
                 error=str(e)
             )
     
-    async def _run_agents(self, summary: ProfilingSummary) -> Dict[str, AnalysisResult]:
-        """并行运行各 Agent"""
+    async def _run_agents(self, data: Dict[str, Any]) -> Dict[str, AnalysisResult]:
+        """
+        并行运行各 Agent
+
+        Args:
+            data: Agent 数据字典，包含 profiling_summary 和其他可选字段（如 top_operators）
+
+        Returns:
+            各 Agent 的分析结果字典
+        """
         results = {}
-        
-        # 准备数据
-        data = summary.to_dict()
-        
+
         # 并行执行
         tasks = []
         agent_names = []
-        
+
         for name, agent in self.agents.items():
             tasks.append(agent.analyze(data))
             agent_names.append(name)
@@ -463,6 +488,31 @@ class Orchestrator:
         except Exception as e:
             logger.error(f"Roofline analysis failed: {e}")
             return None
+
+    def _check_aic_metrics_available(self) -> bool:
+        """
+        检查是否有 AIC metrics 数据可用
+
+        通过查找 OPPROF_* 目录来判断是否包含 msprof op --aic-metrics 生成的数据。
+
+        Returns:
+            True 如果找到 AIC metrics 数据，否则 False
+        """
+        import glob
+        from pathlib import Path
+
+        # 查找所有 OPPROF_* 目录
+        opprof_dirs = glob.glob(str(Path(self.profiling_path) / "OPPROF_*"), recursive=False)
+
+        if not opprof_dirs:
+            # 尝试更深层的搜索
+            opprof_dirs = glob.glob(str(Path(self.profiling_path) / "**" / "OPPROF_*"), recursive=True)
+
+        if opprof_dirs:
+            logger.debug(f"Found {len(opprof_dirs)} AIC metrics directories")
+            return True
+
+        return False
 
 
 async def run_analysis(profiling_path: str, llm_backend: str = "openai") -> AnalysisReport:

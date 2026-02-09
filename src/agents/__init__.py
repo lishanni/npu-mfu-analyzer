@@ -8,6 +8,7 @@ from src.agents.memory_agent import MemoryAgent, MemoryMetrics, MemoryAnalysisDa
 from src.agents.communication_agent import CommunicationAgent, CommunicationMetrics, CommunicationAnalysisData
 from src.agents.advisor_agent import AdvisorAgent, AdvisorReport, OptimizationSuggestion, Priority
 from src.agents.jitter_agent import JitterAgent, JitterMetrics, JitterDetector, detect_jitter_from_loader
+from src.agents.detailed_operator_agent import DetailedOperatorAgent, DetailedOperatorAnalysisData
 
 __all__ = [
     # Base
@@ -41,4 +42,7 @@ __all__ = [
     "JitterMetrics",
     "JitterDetector",
     "detect_jitter_from_loader",
+    # Detailed Operator
+    "DetailedOperatorAgent",
+    "DetailedOperatorAnalysisData",
 ]

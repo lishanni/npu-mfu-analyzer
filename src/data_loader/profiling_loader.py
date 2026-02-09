@@ -15,6 +15,16 @@ from pathlib import Path
 import pandas as pd
 
 from src.data_loader.stream_parser import StreamParser, TimelineSummarizer, extract_overlap_events
+from src.data_loader.aic_metrics import (
+    AICMetrics,
+    ArithmeticUtilization,
+    MemoryMetrics,
+    PipelineMetrics,
+    BOTTLENECK_COMPUTE,
+    BOTTLENECK_MEMORY,
+    BOTTLENECK_PIPELINE,
+    BOTTLENECK_BALANCED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +74,18 @@ class ProfilingLoader:
 
     # Step Trace CSV（msprof-analyze 等工具生成的交付件，DB 无 STEP_TRACE 时降级使用）
     STEP_TRACE_CSV = "step_trace_time.csv"
+
+    # AIC metrics 文件模式 (msprof op --aic-metrics 生成)
+    AIC_METRICS_PATTERNS = [
+        "**/ArithmeticUtilization_*.csv",
+        "**/L2Cache_*.csv",
+        "**/Memory_*.csv",
+        "**/MemoryL0_*.csv",
+        "**/MemoryUB_*.csv",
+        "**/PipeUtilization_*.csv",
+        "**/ResourceConflictRatio_*.csv",
+        "**/OpBasicInfo_*.csv",
+    ]
 
     # step_trace_time.csv 列名（小写后）到内部列名的映射
     _STEP_TRACE_CSV_COLUMN_MAP = {
@@ -735,6 +757,428 @@ class ProfilingLoader:
         except Exception as e:
             logger.error(f"Failed to read kernel_details.csv for MFU: {e}")
             return []
+
+    # ========== AIC Metrics 解析方法 ==========
+
+    def get_aic_metrics(self, rank: Optional[int] = None) -> Dict[str, AICMetrics]:
+        """
+        获取 AIC 硬件指标数据
+
+        解析 msprof op --aic-metrics 生成的详细硬件指标 CSV 文件。
+
+        Args:
+            rank: 指定 rank，None 表示使用第一个可用的
+
+        Returns:
+            Dict[op_name, AICMetrics]: 算子名称到 AIC 指标的映射
+        """
+        # 1. 查找 AIC metrics 目录
+        aic_dirs = self._find_aic_metrics_dirs(rank)
+        if not aic_dirs:
+            logger.debug("No AIC metrics directories found")
+            return {}
+
+        # 2. 解析每个算子的 AIC 指标
+        metrics_dict = {}
+        for aic_dir in aic_dirs:
+            try:
+                op_metrics = self._parse_aic_directory(aic_dir)
+                metrics_dict.update(op_metrics)
+            except Exception as e:
+                logger.warning(f"Failed to parse AIC directory {aic_dir}: {e}")
+
+        if metrics_dict:
+            logger.info(f"Loaded AIC metrics for {len(metrics_dict)} operators")
+        return metrics_dict
+
+    def _find_aic_metrics_dirs(self, rank: Optional[int] = None) -> List[str]:
+        """
+        查找 AIC metrics 目录
+
+        目录结构: OPPROF_{timestamp}_XXX/OpName0/0/*.csv
+        或者: OPPROF_{timestamp}_XXX/device*/OpName0/0/*.csv (多卡场景)
+
+        Args:
+            rank: 指定 rank，None 表示使用所有可用的
+
+        Returns:
+            算子 AIC 目录路径列表
+        """
+        import re
+
+        aic_subdirs = []
+
+        # 查找所有 OPPROF_* 目录
+        opprof_dirs = glob.glob(str(self.profiling_path / "OPPROF_*"), recursive=True)
+
+        # 如果是单卡场景，OPPROF_* 可能直接在 profiling_path 下
+        if not opprof_dirs:
+            # 尝试更深层的搜索
+            opprof_dirs = glob.glob(str(self.profiling_path / "**" / "OPPROF_*"), recursive=True)
+
+        for opprof_dir in opprof_dirs:
+            # 在 OPPROF_* 目录下查找包含 AIC metrics CSV 的子目录
+            # 单卡结构: OPPROF_XXX/OpName0/0/*.csv
+            # 多卡结构: OPPROF_XXX/device0/OpName0/0/*.csv
+
+            # 搜索包含 AIC metrics CSV 的目录
+            for pattern in self.AIC_METRICS_PATTERNS:
+                matches = glob.glob(str(Path(opprof_dir) / pattern), recursive=True)
+                for match in matches:
+                    # 提取算子目录 (例如: OPPROF_XXX/OpName0/0/)
+                    parent_dir = Path(match).parent
+                    # 确保这是包含 CSV 的目录
+                    if parent_dir.is_dir():
+                        # 检查是否匹配指定的 rank
+                        if rank is not None:
+                            # 从路径中提取 rank 信息
+                            path_str = str(parent_dir)
+                            if f"device{rank}" in path_str or f"device_{rank}" in path_str:
+                                if str(parent_dir) not in aic_subdirs:
+                                    aic_subdirs.append(str(parent_dir))
+                        else:
+                            if str(parent_dir) not in aic_subdirs:
+                                aic_subdirs.append(str(parent_dir))
+
+        return aic_subdirs
+
+    def _parse_aic_directory(self, aic_dir: str) -> Dict[str, AICMetrics]:
+        """
+        解析单个算子的 AIC 指标目录
+
+        Args:
+            aic_dir: 算子 AIC 目录路径
+
+        Returns:
+            Dict[op_name, AICMetrics]
+        """
+        # 提取算子名称
+        # 路径示例: .../OPPROF_XXX/MatMulV2_.../0/ 或 .../OPPROF_XXX/device0/MatMulV2_.../0/
+        dir_name = Path(aic_dir).parent.name  # 应该是 "0"
+        parent_name = Path(aic_dir).parent.parent.name  # 应该是算子名称
+
+        # 如果 parent 是 "0" 或数字，再往上找
+        if dir_name.isdigit() or dir_name == "0":
+            op_name = parent_name
+        else:
+            op_name = dir_name
+
+        # 初始化指标
+        metrics = AICMetrics(
+            op_name=op_name,
+            op_type=self._infer_op_type_from_name(op_name),
+            duration_us=0.0,
+        )
+
+        # 查找各类 CSV 文件
+        csv_files = {
+            "arithmetic": glob.glob(str(Path(aic_dir) / "ArithmeticUtilization_*.csv")),
+            "l2_cache": glob.glob(str(Path(aic_dir) / "L2Cache_*.csv")),
+            "memory": glob.glob(str(Path(aic_dir) / "Memory_*.csv")),
+            "memory_l0": glob.glob(str(Path(aic_dir) / "MemoryL0_*.csv")),
+            "memory_ub": glob.glob(str(Path(aic_dir) / "MemoryUB_*.csv")),
+            "pipeline": glob.glob(str(Path(aic_dir) / "PipeUtilization_*.csv")),
+            "conflict": glob.glob(str(Path(aic_dir) / "ResourceConflictRatio_*.csv")),
+            "basic_info": glob.glob(str(Path(aic_dir) / "OpBasicInfo_*.csv")),
+        }
+
+        # 解析算术单元利用率
+        if csv_files["arithmetic"]:
+            try:
+                metrics.arithmetic = self._parse_arithmetic_utilization(csv_files["arithmetic"][0])
+            except Exception as e:
+                logger.debug(f"Failed to parse arithmetic utilization: {e}")
+
+        # 解析内存指标
+        if csv_files["memory"] or csv_files["l2_cache"]:
+            try:
+                metrics.memory = self._parse_memory_metrics(
+                    csv_files.get("memory", [None])[0],
+                    csv_files.get("l2_cache", [None])[0],
+                    csv_files.get("memory_l0", [None])[0],
+                    csv_files.get("memory_ub", [None])[0],
+                )
+            except Exception as e:
+                logger.debug(f"Failed to parse memory metrics: {e}")
+
+        # 解析流水线指标
+        if csv_files["pipeline"] or csv_files["conflict"]:
+            try:
+                metrics.pipeline = self._parse_pipeline_metrics(
+                    csv_files.get("pipeline", [None])[0],
+                    csv_files.get("conflict", [None])[0],
+                )
+            except Exception as e:
+                logger.debug(f"Failed to parse pipeline metrics: {e}")
+
+        # 解析基础信息(获取执行时间)
+        if csv_files["basic_info"]:
+            try:
+                metrics.duration_us = self._parse_op_duration(csv_files["basic_info"][0])
+            except Exception as e:
+                logger.debug(f"Failed to parse op duration: {e}")
+
+        return {op_name: metrics}
+
+    def _parse_arithmetic_utilization(self, csv_path: str) -> ArithmeticUtilization:
+        """解析算术单元利用率 CSV"""
+        df = pd.read_csv(csv_path)
+        df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+
+        # 提取关键指标 (列名可能因版本不同而有变化)
+        def safe_get(col_name, default=0.0):
+            for col in df.columns:
+                if col_name in col.lower():
+                    val = df[col].iloc[0] if not df.empty else default
+                    try:
+                        return float(val)
+                    except (ValueError, TypeError):
+                        return default
+            return default
+
+        return ArithmeticUtilization(
+            cube_utilization=safe_get('cube', 0.0),
+            vector_utilization=safe_get('vector', 0.0),
+            scalar_utilization=safe_get('scalar', 0.0),
+            total_cycles=int(safe_get('total_cycles', 0)),
+        )
+
+    def _parse_memory_metrics(
+        self,
+        memory_csv: Optional[str],
+        l2_cache_csv: Optional[str],
+        l0_csv: Optional[str],
+        ub_csv: Optional[str],
+    ) -> MemoryMetrics:
+        """解析内存相关指标"""
+        l2_hit_rate = 0.0
+        l2_read_bw = 0.0
+        l2_write_bw = 0.0
+        ub_usage = 0.0
+        l0_usage = 0.0
+
+        # 解析 L2 Cache
+        if l2_cache_csv:
+            try:
+                df = pd.read_csv(l2_cache_csv)
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+                # 提取命中率和带宽
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if 'hit' in col_lower and 'rate' in col_lower:
+                        l2_hit_rate = float(df[col].iloc[0]) if not df.empty else 0.0
+                    elif 'read' in col_lower and 'bandwidth' in col_lower:
+                        l2_read_bw = float(df[col].iloc[0]) if not df.empty else 0.0
+                    elif 'write' in col_lower and 'bandwidth' in col_lower:
+                        l2_write_bw = float(df[col].iloc[0]) if not df.empty else 0.0
+            except Exception as e:
+                logger.debug(f"Failed to parse L2 cache CSV: {e}")
+
+        # 解析 Memory 主文件 (可能包含其他内存指标)
+        if memory_csv:
+            try:
+                df = pd.read_csv(memory_csv)
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+                # 如果 L2 命中率还没有值，尝试从主文件获取
+                if l2_hit_rate == 0.0:
+                    for col in df.columns:
+                        if 'l2' in col.lower() and 'hit' in col.lower():
+                            l2_hit_rate = float(df[col].iloc[0]) if not df.empty else 0.0
+                            break
+            except Exception as e:
+                logger.debug(f"Failed to parse Memory CSV: {e}")
+
+        # 解析 UB 和 L0 使用率
+        if ub_csv:
+            try:
+                df = pd.read_csv(ub_csv)
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+                # 提取使用率
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if 'usage' in col_lower or 'utilization' in col_lower or 'use' in col_lower:
+                        val = df[col].iloc[0] if not df.empty else 0.0
+                        try:
+                            ub_usage = float(val)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+            except Exception as e:
+                logger.debug(f"Failed to parse MemoryUB CSV: {e}")
+
+        if l0_csv:
+            try:
+                df = pd.read_csv(l0_csv)
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if 'usage' in col_lower or 'utilization' in col_lower or 'use' in col_lower:
+                        val = df[col].iloc[0] if not df.empty else 0.0
+                        try:
+                            l0_usage = float(val)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+            except Exception as e:
+                logger.debug(f"Failed to parse MemoryL0 CSV: {e}")
+
+        # 计算内存效率 (综合 L2 命中率和 Buffer 使用率)
+        memory_efficiency = (l2_hit_rate * 0.6 + ub_usage * 0.2 + l0_usage * 0.2)
+
+        return MemoryMetrics(
+            l2_cache_hit_rate=l2_hit_rate,
+            l2_read_bandwidth=l2_read_bw,
+            l2_write_bandwidth=l2_write_bw,
+            ub_usage=ub_usage,
+            l0_usage=l0_usage,
+            memory_efficiency=memory_efficiency,
+        )
+
+    def _parse_pipeline_metrics(
+        self,
+        pipeline_csv: Optional[str],
+        conflict_csv: Optional[str],
+    ) -> PipelineMetrics:
+        """解析流水线指标"""
+        pipe_util = 0.0
+        conflict_ratio = 0.0
+
+        if pipeline_csv:
+            try:
+                df = pd.read_csv(pipeline_csv)
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if 'utilization' in col_lower or 'usage' in col_lower:
+                        val = df[col].iloc[0] if not df.empty else 0.0
+                        try:
+                            pipe_util = float(val)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+            except Exception as e:
+                logger.debug(f"Failed to parse PipeUtilization CSV: {e}")
+
+        if conflict_csv:
+            try:
+                df = pd.read_csv(conflict_csv)
+                df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if 'conflict' in col_lower or 'ratio' in col_lower:
+                        val = df[col].iloc[0] if not df.empty else 0.0
+                        try:
+                            conflict_ratio = float(val)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+            except Exception as e:
+                logger.debug(f"Failed to parse ResourceConflictRatio CSV: {e}")
+
+        # 停顿率 = 1 - 流水线利用率 - 资源冲突影响
+        stall_rate = max(0.0, 100.0 - pipe_util - conflict_ratio * 50)
+
+        return PipelineMetrics(
+            pipe_utilization=pipe_util,
+            stall_rate=stall_rate,
+            resource_conflict_ratio=conflict_ratio,
+        )
+
+    def _parse_op_duration(self, basic_info_csv: str) -> float:
+        """从基础信息 CSV 中提取执行时间"""
+        try:
+            df = pd.read_csv(basic_info_csv)
+            df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
+
+            # 查找时间相关列
+            for col in df.columns:
+                col_lower = col.lower()
+                if any(keyword in col_lower for keyword in ['duration', 'time', 'dur']):
+                    val = df[col].iloc[0] if not df.empty else 0.0
+                    try:
+                        value = float(val)
+                        # 统一转换为微秒
+                        if 'ns' in col_lower:
+                            return value / 1000.0
+                        elif 'ms' in col_lower:
+                            return value * 1000.0
+                        else:
+                            return value
+                    except (ValueError, TypeError):
+                        continue
+        except Exception as e:
+            logger.debug(f"Failed to parse OpBasicInfo CSV: {e}")
+
+        return 0.0
+
+    def _infer_op_type_from_name(self, op_name: str) -> str:
+        """从算子名称推断算子类型"""
+        op_name_lower = op_name.lower()
+
+        if any(keyword in op_name_lower for keyword in ['matmul', 'gemm', 'mm', 'conv']):
+            return "compute_intensive"
+        elif any(keyword in op_name_lower for keyword in ['add', 'mul', 'sub', 'div', 'pow']):
+            return "element_wise"
+        elif any(keyword in op_name_lower for keyword in ['reduce', 'sum', 'mean']):
+            return "reduction"
+        elif any(keyword in op_name_lower for keyword in ['norm', 'batchnorm', 'layernorm', 'rmsnorm']):
+            return "memory_intensive"
+        elif any(keyword in op_name_lower for keyword in ['attention', 'attn', 'flash']):
+            return "memory_intensive"
+        else:
+            return "unknown"
+
+    def get_aic_metrics_for_operators(
+        self,
+        operator_names: List[str],
+        rank: Optional[int] = None
+    ) -> List[AICMetrics]:
+        """
+        获取指定算子列表的 AIC 指标
+
+        Args:
+            operator_names: 算子名称列表
+            rank: 指定 rank
+
+        Returns:
+            AICMetrics 列表 (按算子名称匹配)
+        """
+        all_metrics = self.get_aic_metrics(rank)
+
+        result = []
+        for op_name in operator_names:
+            # 精确匹配
+            if op_name in all_metrics:
+                result.append(all_metrics[op_name])
+            else:
+                # 尝试基础名称匹配
+                base_name = self._extract_base_op_name(op_name)
+                if base_name in all_metrics:
+                    result.append(all_metrics[base_name])
+
+        return result
+
+    def _extract_base_op_name(self, full_name: str) -> str:
+        """
+        提取基础算子名称(去除参数后缀)
+
+        例如: MatMulV2_ND_ND_FP16_FP16_false_true_all_98499 -> MatMulV2
+        """
+        import re
+        # 移除末尾数字后缀
+        name = re.sub(r'_\d+$', '', full_name)
+        # 保留基础类型
+        base_patterns = [
+            r'^(MatMulV2|MatMul|GEMM)',
+            r'^(Conv2D|Conv3D)',
+            r'^(LayerNorm|Softmax|Dropout|GELU|ReLU)',
+            r'^(Add|Mul|Sub|Div|Pow)',
+        ]
+        for pattern in base_patterns:
+            match = re.match(pattern, name)
+            if match:
+                return match.group(1)
+        return name
 
     def close(self):
         """关闭所有数据库连接"""

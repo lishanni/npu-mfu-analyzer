@@ -1057,6 +1057,293 @@ def integrate(
 
 
 @cli.command()
+@click.argument("profiling_path", type=click.Path(exists=True))
+@click.option(
+    "--top-n", "-n",
+    type=int,
+    default=20,
+    help="显示 Top N 算子（默认: 20）"
+)
+@click.option(
+    "--sort-by", "-s",
+    type=click.Choice(["duration", "cube_util", "l2_hit", "stall_rate", "name"]),
+    default="duration",
+    help="排序方式（默认: duration）"
+)
+@click.option(
+    "--show-all", "-a",
+    is_flag=True,
+    help="显示所有指标"
+)
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    help="输出到文件（CSV 或 Markdown）"
+)
+@click.option(
+    "--severity",
+    type=click.Choice(["all", "critical", "high", "medium", "low"]),
+    default="all",
+    help="按严重度筛选（默认: all）"
+)
+def analyze_aic(
+    profiling_path: str,
+    top_n: int,
+    sort_by: str,
+    show_all: bool,
+    output: Optional[str],
+    severity: str
+):
+    """
+    分析 AIC Metrics 硬件指标数据
+
+    解析 msprof op --aic-metrics 生成的详细硬件指标，分析算子瓶颈。
+    支持 Cube 利用率、L2 缓存命中率、流水线利用率等指标分析。
+
+    PROFILING_PATH: Profiling 数据目录路径
+
+    示例:
+        npu-analyzer analyze-aic /path/to/profiling
+        npu-analyzer analyze-aic /path/to/profiling --top-n 30 --sort-by cube_util
+        npu-analyzer analyze-aic /path/to/profiling --severity critical --output report.md
+    """
+    from src.data_loader.profiling_loader import ProfilingLoader
+    from src.data_loader.aic_metrics import (
+        CRITICAL_THRESHOLD,
+        HIGH_THRESHOLD,
+        BOTTLENECK_COMPUTE,
+        BOTTLENECK_MEMORY,
+        BOTTLENECK_PIPELINE,
+    )
+
+    click.echo(click.style("🔍 分析 AIC Metrics 硬件指标", fg="cyan", bold=True))
+    click.echo(f"   数据路径: {profiling_path}")
+    click.echo(f"   Top N: {top_n}")
+    click.echo(f"   排序: {sort_by}")
+    click.echo("")
+
+    # 检查 AIC metrics 是否可用
+    import glob
+    opprof_dirs = glob.glob(str(Path(profiling_path) / "OPPROF_*"), recursive=True)
+    if not opprof_dirs:
+        click.echo(click.style("⚠️  未找到 AIC metrics 数据", fg="yellow"))
+        click.echo("   请使用 msprof op --aic-metrics 生成数据")
+        click.echo("")
+        click.echo("   示例命令:")
+        click.echo("     msprof op --aic-metrics --output /path/to/profiling")
+        sys.exit(1)
+
+    # 加载 AIC metrics
+    try:
+        loader = ProfilingLoader(profiling_path)
+        aic_metrics = loader.get_aic_metrics()
+
+        if not aic_metrics:
+            click.echo(click.style("⚠️  未找到有效的 AIC metrics 数据", fg="yellow"))
+            sys.exit(1)
+
+        click.echo(click.style(f"✅ 加载了 {len(aic_metrics)} 个算子的 AIC metrics", fg="green"))
+        click.echo("")
+
+        # 转换为列表以便排序
+        metrics_list = []
+        for op_name, metrics in aic_metrics.items():
+            cube_util = metrics.arithmetic.cube_utilization if metrics.arithmetic else 100.0
+            l2_hit = metrics.memory.l2_cache_hit_rate if metrics.memory else 100.0
+            stall_rate = metrics.pipeline.stall_rate if metrics.pipeline else 0.0
+
+            # 确定瓶颈类型和严重度
+            if cube_util < CRITICAL_THRESHOLD or l2_hit < CRITICAL_THRESHOLD:
+                sev = "critical"
+            elif stall_rate > 50:
+                sev = "high"
+            elif cube_util < HIGH_THRESHOLD or l2_hit < HIGH_THRESHOLD:
+                sev = "medium"
+            else:
+                sev = "low"
+
+            metrics_list.append({
+                "name": op_name,
+                "metrics": metrics,
+                "cube_util": cube_util,
+                "l2_hit": l2_hit,
+                "stall_rate": stall_rate,
+                "duration": metrics.duration_us,
+                "severity": sev
+            })
+
+        # 按 severity 和选定的指标排序
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        metrics_list.sort(key=lambda x: (severity_order[x["severity"]], -x.get(sort_by, 0)))
+
+        # 筛选严重度
+        if severity != "all":
+            metrics_list = [m for m in metrics_list if m["severity"] == severity]
+
+        # 限制显示数量
+        display_list = metrics_list[:top_n]
+
+        # 输出结果
+        click.echo("=" * 80)
+        click.echo(click.style(f"AIC Metrics 分析结果 (Top {len(display_list)})", fg="cyan", bold=True))
+        click.echo("=" * 80)
+
+        results = []
+        for i, item in enumerate(display_list, 1):
+            m = item["metrics"]
+            sev = item["severity"]
+
+            # 严重度颜色
+            if sev == "critical":
+                sev_emoji = "🔴"
+                sev_style = {"fg": "red"}
+            elif sev == "high":
+                sev_emoji = "🟠"
+                sev_style = {"fg": "yellow"}
+            elif sev == "medium":
+                sev_emoji = "🟡"
+                sev_style = {"fg": "yellow"}
+            else:
+                sev_emoji = "🟢"
+                sev_style = {"fg": "green"}
+
+            click.echo(f"\n{i}. {sev_emoji} {click.style(item['name'], bold=True)}")
+
+            # 基本指标
+            click.echo(f"   执行时间: {m.duration_us:.2f} μs")
+            click.echo(f"   类型: {m.op_type}")
+
+            if m.arithmetic:
+                click.echo(f"   算术单元:")
+                cube_color = "red" if item['cube_util'] < CRITICAL_THRESHOLD else "green"
+                click.echo(click.style(f"     Cube:   {item['cube_util']:.1f}%", fg=cube_color))
+                click.echo(f"     Vector: {m.arithmetic.vector_utilization:.1f}%")
+                click.echo(f"     Scalar: {m.arithmetic.scalar_utilization:.1f}%")
+
+            if m.memory:
+                click.echo(f"   内存:")
+                l2_color = "red" if item['l2_hit'] < CRITICAL_THRESHOLD else "green"
+                click.echo(click.style(f"     L2 命中率: {item['l2_hit']:.1f}%", fg=l2_color))
+                click.echo(f"     UB 使用率: {m.memory.ub_usage:.1f}%")
+                click.echo(f"     L0 使用率: {m.memory.l0_usage:.1f}%")
+
+            if m.pipeline:
+                click.echo(f"   流水线:")
+                click.echo(f"     利用率: {m.pipeline.pipe_utilization:.1f}%")
+                stall_color = "red" if item['stall_rate'] > 50 else "green"
+                click.echo(click.style(f"     停顿率: {item['stall_rate']:.1f}%", fg=stall_color))
+
+            # 瓶颈诊断
+            if item['cube_util'] < CRITICAL_THRESHOLD:
+                click.echo(click.style(f"   ⚠️  计算瓶颈: Cube 利用率过低", fg="red"))
+            elif item['l2_hit'] < CRITICAL_THRESHOLD:
+                click.echo(click.style(f"   ⚠️  内存瓶颈: L2 缓存命中率过低", fg="red"))
+            elif item['stall_rate'] > 50:
+                click.echo(click.style(f"   ⚠️  流水线瓶颈: 停顿率过高", fg="yellow"))
+
+            results.append(item)
+
+        # 统计摘要
+        click.echo("\n" + "=" * 80)
+        click.echo(click.style("瓶颈统计", fg="cyan", bold=True))
+        click.echo("=" * 80)
+
+        critical_count = sum(1 for m in metrics_list if m["severity"] == "critical")
+        high_count = sum(1 for m in metrics_list if m["severity"] == "high")
+        medium_count = sum(1 for m in metrics_list if m["severity"] == "medium")
+        low_count = sum(1 for m in metrics_list if m["severity"] == "low")
+
+        click.echo(f"🔴 严重 (critical): {critical_count}")
+        click.echo(f"🟠 高 (high):       {high_count}")
+        click.echo(f"🟡 中 (medium):    {medium_count}")
+        click.echo(f"🟢 低 (low):       {low_count}")
+
+        # 输出到文件
+        if output:
+            output_path = Path(output)
+            output_str = ""
+
+            if output_path.suffix == ".csv":
+                # CSV 格式
+                import csv
+                import io
+
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow([
+                    "算子名称", "严重度", "执行时间(μs)", "Cube利用率(%)",
+                    "Vector利用率(%)", "Scalar利用率(%)", "L2命中率(%)",
+                    "UB使用率(%)", "L0使用率(%)", "流水线利用率(%)", "停顿率(%)"
+                ])
+
+                for item in results:
+                    m = item["metrics"]
+                    writer.writerow([
+                        item["name"], item["severity"], f"{m.duration_us:.2f}",
+                        f"{item['cube_util']:.1f}",
+                        f"{m.arithmetic.vector_utilization:.1f}" if m.arithmetic else "",
+                        f"{m.arithmetic.scalar_utilization:.1f}" if m.arithmetic else "",
+                        f"{item['l2_hit']:.1f}",
+                        f"{m.memory.ub_usage:.1f}" if m.memory else "",
+                        f"{m.memory.l0_usage:.1f}" if m.memory else "",
+                        f"{m.pipeline.pipe_utilization:.1f}" if m.pipeline else "",
+                        f"{item['stall_rate']:.1f}"
+                    ])
+
+                output_str = output.getvalue()
+            else:
+                # Markdown 格式
+                output_str = f"# AIC Metrics 分析报告\n\n"
+                output_str += f"数据路径: `{profiling_path}`\n\n"
+                output_str += f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+                output_str += "## 瓶颈统计\n\n"
+                output_str += f"- 🔴 严重: {critical_count}\n"
+                output_str += f"- 🟠 高: {high_count}\n"
+                output_str += f"- 🟡 中: {medium_count}\n"
+                output_str += f"- 🟢 低: {low_count}\n\n"
+
+                output_str += f"## Top {len(results)} 算子详情\n\n"
+
+                for i, item in enumerate(results, 1):
+                    m = item["metrics"]
+                    sev_emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}[item["severity"]]
+
+                    output_str += f"### {i}. {sev_emoji} {item['name']}\n\n"
+                    output_str += f"- **严重度**: {item['severity']}\n"
+                    output_str += f"- **执行时间**: {m.duration_us:.2f} μs\n"
+                    output_str += f"- **类型**: {m.op_type}\n\n"
+
+                    if m.arithmetic:
+                        output_str += "**算术单元**:\n"
+                        output_str += f"- Cube: {item['cube_util']:.1f}%\n"
+                        output_str += f"- Vector: {m.arithmetic.vector_utilization:.1f}%\n"
+                        output_str += f"- Scalar: {m.arithmetic.scalar_utilization:.1f}%\n\n"
+
+                    if m.memory:
+                        output_str += "**内存**:\n"
+                        output_str += f"- L2 命中率: {item['l2_hit']:.1f}%\n"
+                        output_str += f"- UB 使用率: {m.memory.ub_usage:.1f}%\n"
+                        output_str += f"- L0 使用率: {m.memory.l0_usage:.1f}%\n\n"
+
+                    if m.pipeline:
+                        output_str += "**流水线**:\n"
+                        output_str += f"- 利用率: {m.pipeline.pipe_utilization:.1f}%\n"
+                        output_str += f"- 停顿率: {item['stall_rate']:.1f}%\n\n"
+
+                output_str += "\n---\n\n*本报告由 npu-mfu-analyzer 自动生成*"
+
+            output_path.write_text(output_str, encoding="utf-8")
+            click.echo(f"\n📄 报告已保存到: {output_path}")
+
+    except Exception as e:
+        click.echo(click.style(f"❌ 发生错误: {e}", fg="red"))
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
 @click.option(
     "--host", "-h",
     type=str,
