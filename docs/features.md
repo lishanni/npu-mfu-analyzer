@@ -12,7 +12,120 @@
 | **CommunicationAgent** | 通信性能分析 | 带宽利用率、集合操作效率 |
 | **JitterAgent** | 抖动检测 | 计算/通信抖动、跨 Rank 方差、慢卡识别 |
 
-## 2. 硬件感知 (Hardware Registry)
+## 2. Profiling 对比分析 (Comparison)
+
+支持两个 Profiling 数据的深度对比分析，适用于以下场景：
+- **软件版本升级前后对比**：如 CANN 版本升级后性能变化分析
+- **并行策略调整对比**：如 TP=4 vs TP=8 的性能差异
+- **参数调优前后对比**：如调整 micro_batch_size 后的效果验证
+- **硬件迁移对比**：如从 910A 迁移到 910B 的性能变化
+
+### 对比分析流程
+
+```
+Profiling A + Profiling B
+         ↓
+┌─────────────────────────────┐
+│     SimilarityChecker       │
+│  • 硬件匹配 (35%)           │
+│  • 模型匹配 (30%)           │
+│  • 框架匹配 (15%)           │
+│  • 数据形状 (20%)           │
+└──────────────┬──────────────┘
+               ↓
+     score >= 0.3 ?
+      YES ↓     NO → 提示不适合对比
+┌─────────────────────────────┐
+│    ProfilingDiffEngine      │
+│  Level 1: Summary Diff      │
+│  Level 2: Timeline Diff     │
+│  Level 3: Operator Diff     │
+│  Level 4: Communication Diff│
+│  Level 5: Memory Diff       │
+└──────────────┬──────────────┘
+               ↓
+┌─────────────────────────────┐
+│  ComparisonAdvisorAgent     │
+│  • LLM 深度根因分析         │
+│  • 规则引擎降级分析         │
+└──────────────┬──────────────┘
+               ↓
+       对比分析报告 (MD/HTML)
+```
+
+### CLI 使用
+
+```bash
+# 基本对比
+npu-analyzer compare /path/to/profiling_v1 /path/to/profiling_v2
+
+# 带标签的对比
+npu-analyzer compare /path/to/v1 /path/to/v2 \
+    --label-a "CANN 8.0" --label-b "CANN 8.1"
+
+# 使用 LLM 深度分析
+npu-analyzer compare /path/to/v1 /path/to/v2 -b openai -o report.md
+
+# 跳过相似度检查（如不同并行策略）
+npu-analyzer compare /path/to/tp4 /path/to/tp8 --force
+```
+
+### Python API
+
+```python
+import asyncio
+from src.analyzers.comparison_orchestrator import ComparisonOrchestrator
+from src.llm import LLMConfig
+
+async def compare():
+    orchestrator = ComparisonOrchestrator(
+        path_a="/path/to/profiling_before",
+        path_b="/path/to/profiling_after",
+        label_a="升级前",
+        label_b="升级后",
+        llm_config=LLMConfig(backend="mock"),
+    )
+    report = await orchestrator.run()
+
+    if report.success:
+        print(f"整体判断: {report.diff.overall_verdict}")
+        for change in report.diff.primary_changes:
+            print(f"  - {change}")
+    elif report.error == "NOT_COMPARABLE":
+        print(f"不建议对比: {report.similarity.summary}")
+
+asyncio.run(compare())
+```
+
+### 对比报告内容
+
+| 章节 | 内容 |
+|------|------|
+| **对比概览** | 两版本基本信息、整体判断（提升/劣化/混合/不变） |
+| **相似度评估** | 4 维度评分表、对比可行性判断 |
+| **核心指标对比** | Step 时间、计算/通信/空闲占比、掩盖率等 side-by-side |
+| **算子级对比** | Top 劣化算子、Top 改善算子、新增/消失算子 |
+| **Timeline 级对比** | Step 稳定性变化、各阶段时间变化 |
+| **通信级对比** | 通信总时间、掩盖率、通信模式变化 |
+| **深度根因分析** | LLM 生成的根因分析和优化建议 |
+| **优化建议** | 按优先级排序的可操作建议 |
+
+### Web API
+
+```
+POST /api/compare
+{
+    "path_a": "/path/to/profiling_before",
+    "path_b": "/path/to/profiling_after",
+    "label_a": "升级前",
+    "label_b": "升级后",
+    "llm_backend": "mock",
+    "output_format": "html",
+    "force": false
+}
+```
+
+## 3. 硬件感知 (Hardware Registry)
 
 自动检测或手动指定硬件规格：
 
@@ -34,7 +147,7 @@ print(f"HBM 带宽: {spec.hbm_bandwidth} GB/s")
 | Atlas A2 (376T) | 376 TFLOPS | 2.0 TB/s | 56 GB/s |
 | Atlas 300I (310P) | 22 TFLOPS | 68 GB/s | - |
 
-## 3. 模式识别 (Pattern Matcher)
+## 4. 模式识别 (Pattern Matcher)
 
 自动识别训练框架和并行策略：
 
@@ -64,7 +177,7 @@ print(f"模型: {pattern.model.num_layers} layers, hidden={pattern.model.hidden_
 - Sequence Parallel (CP)
 - Expert Parallel (EP)
 
-## 4. 集群拓扑分析 (Topology Analyzer)
+## 5. 集群拓扑分析 (Topology Analyzer)
 
 ```python
 from src.topology import TopologyAnalyzer
@@ -90,7 +203,7 @@ print(f"AllReduce 效率: {analysis.efficiency:.1%}")
 print(f"推荐算法: {profiler.get_optimal_algorithm(data_size)}")
 ```
 
-## 5. 专家技能引擎 (Skill Engine)
+## 6. 专家技能引擎 (Skill Engine)
 
 ### Python Skills (精确计算)
 
@@ -142,7 +255,7 @@ chain = engine.build_chain("mfu_diagnosis") \
 result = engine.execute_chain("mfu_diagnosis", context={...})
 ```
 
-## 6. Roofline 性能建模
+## 7. Roofline 性能建模
 
 ```python
 from src.roofline import RooflineModeler, PrecisionType
@@ -185,7 +298,7 @@ print(f"受限类型: {result['bound_description']}")
                        脊点
 ```
 
-## 7. What-if 假设分析
+## 8. What-if 假设分析
 
 ```python
 from src.roofline import WhatIfSimulator, CurrentState

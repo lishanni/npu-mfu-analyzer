@@ -54,6 +54,31 @@ from src.analyzers.history_comparator import (
     ComparisonResult,
 )
 
+from src.analyzers.similarity_checker import (
+    SimilarityChecker,
+    SimilarityResult,
+    SimilarityDimension,
+    ComparabilityLevel,
+)
+
+from src.analyzers.profiling_diff import (
+    ProfilingDiffEngine,
+    ProfilingDiff,
+    SummaryDiff,
+    OperatorDiff,
+    OperatorChange,
+    TimelineDiff,
+    CommDiff,
+    MemoryDiff,
+    MetricChange,
+)
+
+from src.analyzers.comparison_orchestrator import (
+    ComparisonOrchestrator,
+    ComparisonReport,
+    run_comparison,
+)
+
 __all__ = [
     # Overlap
     "TimeRange",
@@ -93,4 +118,23 @@ __all__ = [
     "HistoryComparator",
     "ProfilingSnapshot",
     "ComparisonResult",
+    # Similarity Checker
+    "SimilarityChecker",
+    "SimilarityResult",
+    "SimilarityDimension",
+    "ComparabilityLevel",
+    # Profiling Diff
+    "ProfilingDiffEngine",
+    "ProfilingDiff",
+    "SummaryDiff",
+    "OperatorDiff",
+    "OperatorChange",
+    "TimelineDiff",
+    "CommDiff",
+    "MemoryDiff",
+    "MetricChange",
+    # Comparison Orchestrator
+    "ComparisonOrchestrator",
+    "ComparisonReport",
+    "run_comparison",
 ]

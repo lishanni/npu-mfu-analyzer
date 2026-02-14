@@ -268,6 +268,42 @@ class HistoryComparator:
         
         baseline = other_snapshots[-1]  # 最后一个
         return self._compare_snapshots(baseline, current)
+
+    def compare_profiling_paths(
+        self,
+        path_a: str,
+        path_b: str,
+        label_a: str = "基准版本",
+        label_b: str = "当前版本",
+    ) -> ComparisonResult:
+        """
+        直接通过 Profiling 路径进行对比
+
+        无需预先保存快照，直接加载两个 Profiling 路径的数据进行对比。
+
+        Args:
+            path_a: 基准 Profiling 路径
+            path_b: 当前 Profiling 路径
+            label_a: 基准版本标签
+            label_b: 当前版本标签
+
+        Returns:
+            ComparisonResult
+        """
+        from src.data_loader.profiling_loader import ProfilingLoader
+        from src.data_loader.data_summarizer import DataSummarizer
+
+        # 加载并摘要化两个 Profiling 数据
+        loader_a = ProfilingLoader(path_a)
+        loader_b = ProfilingLoader(path_b)
+        summary_a = DataSummarizer(loader_a).summarize()
+        summary_b = DataSummarizer(loader_b).summarize()
+
+        # 创建快照
+        snapshot_a = self.create_snapshot_from_summary(label_a, path_a, summary_a)
+        snapshot_b = self.create_snapshot_from_summary(label_b, path_b, summary_b)
+
+        return self._compare_snapshots(snapshot_a, snapshot_b)
     
     def _get_snapshot(self, snapshot_id: str) -> Optional[ProfilingSnapshot]:
         """获取快照"""

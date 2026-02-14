@@ -1344,6 +1344,210 @@ def analyze_aic(
 
 
 @cli.command()
+@click.argument("path_a", type=click.Path(exists=True))
+@click.argument("path_b", type=click.Path(exists=True))
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    help="输出报告路径（默认输出到终端）"
+)
+@click.option(
+    "--backend", "-b",
+    type=click.Choice(["openai", "claude", "ollama", "deepseek", "mock"]),
+    default="mock",
+    help="LLM 后端（默认: mock，使用规则引擎）"
+)
+@click.option(
+    "--model", "-m",
+    type=str,
+    default=None,
+    help="LLM 模型名称"
+)
+@click.option(
+    "--format", "-f",
+    type=click.Choice(["markdown", "html", "md"]),
+    default="markdown",
+    help="报告格式（默认: markdown）"
+)
+@click.option(
+    "--label-a",
+    type=str,
+    default=None,
+    help="基准版本标签（如: v2.0-升级前）"
+)
+@click.option(
+    "--label-b",
+    type=str,
+    default=None,
+    help="当前版本标签（如: v2.1-升级后）"
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="跳过相似度检查，强制对比"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="详细输出"
+)
+def compare(
+    path_a: str,
+    path_b: str,
+    output: Optional[str],
+    backend: str,
+    model: Optional[str],
+    format: str,
+    label_a: Optional[str],
+    label_b: Optional[str],
+    force: bool,
+    verbose: bool
+):
+    """
+    对比两个 Profiling 数据
+
+    比较两次 Profiling 的差异，分析性能变化的根本原因。
+
+    \b
+    典型场景:
+    - 软件版本升级前后的性能对比
+    - 不同并行策略的性能对比
+    - 参数调优前后的性能对比
+
+    \b
+    示例:
+        npu-analyzer compare /path/to/profiling_before /path/to/profiling_after
+        npu-analyzer compare /p/v1 /p/v2 --label-a "CANN 8.0" --label-b "CANN 8.1" -b openai
+        npu-analyzer compare /p/tp4 /p/tp8 --label-a "TP=4" --label-b "TP=8" --force
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    # 默认标签
+    if not label_a:
+        label_a = f"基准版本 (A): {Path(path_a).name}"
+    if not label_b:
+        label_b = f"当前版本 (B): {Path(path_b).name}"
+
+    click.echo(click.style("🔄 Profiling 对比分析", fg="cyan", bold=True))
+    click.echo(f"   A (基准): {path_a}")
+    click.echo(f"   B (当前): {path_b}")
+    click.echo(f"   LLM 后端: {backend}")
+    click.echo(f"   强制对比: {'是' if force else '否'}")
+    click.echo("")
+
+    try:
+        from src.analyzers.comparison_orchestrator import ComparisonOrchestrator, ComparisonReport
+        from src.llm.llm_interface import LLMConfig
+        from src.report.report_generator import ReportFormat
+
+        # 配置 LLM
+        llm_config = LLMConfig(backend=backend)
+        if model:
+            llm_config.model = model
+
+        # 确定输出格式
+        if format in ("html",):
+            output_format = ReportFormat.HTML
+        else:
+            output_format = ReportFormat.MARKDOWN
+
+        # 创建 Orchestrator
+        orchestrator = ComparisonOrchestrator(
+            path_a=path_a,
+            path_b=path_b,
+            label_a=label_a,
+            label_b=label_b,
+            llm_config=llm_config,
+            force=force,
+        )
+
+        # 执行对比
+        click.echo("⏳ 正在加载和分析 Profiling 数据...")
+        report = asyncio.run(orchestrator.run(output_format=output_format))
+
+        if not report.success:
+            if report.error == "NOT_COMPARABLE":
+                click.echo("")
+                click.echo(click.style("❌ 两个 Profiling 数据不适合对比", fg="red", bold=True))
+                click.echo("")
+                if report.similarity:
+                    click.echo(f"   相似度评分: {report.similarity.overall_score * 100:.0f}%")
+                    click.echo(f"   {report.similarity.summary}")
+                    if report.similarity.warnings:
+                        click.echo("")
+                        for w in report.similarity.warnings:
+                            click.echo(f"   ⚠️ {w}")
+                click.echo("")
+                click.echo(click.style(
+                    "💡 提示: 使用 --force 选项可跳过相似度检查强制对比", fg="yellow"
+                ))
+
+                # 即使不可比，仍然输出报告（如果有）
+                if report.final_report and output:
+                    output_path = Path(output)
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(report.final_report, encoding="utf-8")
+                    click.echo(f"\n📄 报告已保存到: {output_path}")
+
+                sys.exit(1)
+            else:
+                click.echo(click.style(f"❌ 对比分析失败: {report.error}", fg="red"))
+                sys.exit(1)
+
+        # 输出结果
+        click.echo("")
+        click.echo(click.style("✅ 对比分析完成", fg="green", bold=True))
+        click.echo("")
+
+        # 显示摘要
+        if report.diff:
+            verdict_map = {
+                "improved": ("性能提升 ✅", "green"),
+                "degraded": ("性能劣化 ⚠️", "red"),
+                "mixed": ("喜忧参半 ⚖️", "yellow"),
+                "unchanged": ("基本不变 ➡️", "blue"),
+            }
+            verdict_text, color = verdict_map.get(
+                report.diff.overall_verdict, ("N/A", "white")
+            )
+            click.echo(f"   整体判断: {click.style(verdict_text, fg=color, bold=True)}")
+
+            if report.diff.primary_changes:
+                click.echo("")
+                click.echo("   主要变化:")
+                for change in report.diff.primary_changes:
+                    click.echo(f"   • {change}")
+
+        if report.similarity:
+            click.echo(f"\n   相似度评分: {report.similarity.overall_score * 100:.0f}%")
+
+        if report.recommendations:
+            click.echo("")
+            click.echo(click.style("   优化建议:", fg="yellow", bold=True))
+            for i, rec in enumerate(report.recommendations[:5], 1):
+                click.echo(f"   {i}. {rec}")
+
+        # 输出报告
+        if output:
+            output_path = Path(output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(report.final_report, encoding="utf-8")
+            click.echo(f"\n📄 报告已保存到: {output_path}")
+        elif report.final_report:
+            click.echo("")
+            click.echo("=" * 70)
+            click.echo(report.final_report)
+
+    except Exception as e:
+        click.echo(click.style(f"❌ 发生错误: {e}", fg="red"))
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
 @click.option(
     "--host", "-h",
     type=str,

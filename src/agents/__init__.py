@@ -9,6 +9,7 @@ from src.agents.communication_agent import CommunicationAgent, CommunicationMetr
 from src.agents.advisor_agent import AdvisorAgent, AdvisorReport, OptimizationSuggestion, Priority
 from src.agents.jitter_agent import JitterAgent, JitterMetrics, JitterDetector, detect_jitter_from_loader
 from src.agents.detailed_operator_agent import DetailedOperatorAgent, DetailedOperatorAnalysisData
+from src.agents.comparison_agent import ComparisonAdvisorAgent
 
 __all__ = [
     # Base
@@ -45,4 +46,6 @@ __all__ = [
     # Detailed Operator
     "DetailedOperatorAgent",
     "DetailedOperatorAnalysisData",
+    # Comparison
+    "ComparisonAdvisorAgent",
 ]
