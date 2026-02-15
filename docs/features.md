@@ -2,15 +2,59 @@
 
 ## 1. Multi-Agent 智能分析
 
-基于 Multi-Agent 架构，5 个专业 Agent 协同工作：
+基于 Multi-Agent 架构，11 个专业 Agent 协同工作：
+
+### 核心分析 Agent
 
 | Agent | 职责 | 关键指标 |
 |-------|------|---------|
 | **TimelineAgent** | Timeline 事件分析 | Computing/Communication/Free 时间分布 |
-| **OperatorAgent** | 算子性能分析 | 热点算子、执行效率、Tiling 效率 |
-| **MemoryAgent** | 内存使用分析 | 峰值内存、碎片率、OOM 风险 |
-| **CommunicationAgent** | 通信性能分析 | 带宽利用率、集合操作效率 |
-| **JitterAgent** | 抖动检测 | 计算/通信抖动、跨 Rank 方差、慢卡识别 |
+| **OperatorAgent** | 算子性能分析 | 热点算子、执行效率、融合机会检测 |
+| **MemoryAgent** | 内存使用分析 | 峰值内存、碎片率、OOM 风险、泄漏检测 |
+| **CommunicationAgent** | 通信性能分析 | 带宽利用率、TP/DP/PP 拆分、集合操作效率 |
+| **JitterAgent** | 抖动检测 | 计算/通信/对齐抖动、跨 Rank 方差、慢卡识别 |
+| **AdvisorAgent** | 综合建议 | 多 Agent 结果汇总、优先级建议、优化规则库 |
+| **DetailedOperatorAgent** | AIC 级算子分析 | Cube/Vector 利用率、L2 命中率、流水线停顿 |
+| **ComparisonAdvisorAgent** | 对比根因分析 | 两次 Profiling 差异根因、LLM / 规则引擎分析 |
+
+### JitterAgent 详细说明
+
+JitterAgent 检测因网络波动、CPU 调度、内存争用等导致的性能抖动，支持 4 种抖动类型：
+
+| 抖动类型 | 检测方法 | 关键阈值 |
+|---------|---------|---------|
+| **计算抖动** | 各 Step 计算时间的 CV（变异系数） | CV > 10% 为异常 |
+| **通信抖动** | 各 Step 通信时间的 CV | CV > 15% 为异常 |
+| **对齐抖动** | 跨 Rank 的同步偏差（skew） | skew > 5ms 为异常 |
+| **内存抖动** | 内存分配/释放时间波动 | 标准差显著偏离 |
+
+```python
+from src.agents.jitter_agent import JitterAgent, JitterDetector
+
+# 使用 JitterDetector 进行离线检测
+detector = JitterDetector()
+metrics = detector.analyze(step_times, comm_times, rank_times)
+
+print(f"计算抖动 CV: {metrics.compute_jitter_cv:.1%}")
+print(f"通信抖动 CV: {metrics.comm_jitter_cv:.1%}")
+print(f"慢 Rank: {metrics.slow_ranks}")
+print(f"根因: {metrics.root_causes}")
+```
+
+### DetailedOperatorAgent 详细说明
+
+利用 AIC Metrics 硬件指标对算子进行微架构级瓶颈分析：
+
+```python
+from src.agents.detailed_operator_agent import DetailedOperatorAgent
+
+agent = DetailedOperatorAgent(llm=llm)
+result = await agent.analyze({
+    "aic_analysis": aic_analysis_result,
+    "summary": profiling_summary,
+})
+# result 包含：瓶颈类型（计算/访存/流水线/混合）、AIKG 优化建议
+```
 
 ## 2. Profiling 对比分析 (Comparison)
 
@@ -203,6 +247,33 @@ print(f"AllReduce 效率: {analysis.efficiency:.1%}")
 print(f"推荐算法: {profiler.get_optimal_algorithm(data_size)}")
 ```
 
+### HCCS Ring 拓扑解析
+
+HCCS (High-speed Chip-to-Chip Scalability) 是昇腾 NPU 的片间互联技术（类似 NVLink）。在 8 卡机器中通常有多个 HCCS Ring，跨 Ring 通信效率会降低。
+
+```python
+from src.topology import HCCSTopologyParser
+
+parser = HCCSTopologyParser(npus_per_machine=8)
+topology = parser.parse()
+
+for ring in topology.rings:
+    print(f"Ring {ring.ring_id}: NPU {ring.device_ids}, BW={ring.bandwidth_gbps} GB/s")
+
+# 分析跨 Ring 通信开销
+analysis = parser.analyze_communication(comm_events)
+print(f"Ring 内通信占比: {analysis.intra_ring_ratio:.1%}")
+print(f"跨 Ring 通信占比: {analysis.cross_ring_ratio:.1%}")
+```
+
+**典型拓扑示例**：
+```
+Atlas 800 (8x 910B):
+  Ring 0: NPU 0 ─ 1 ─ 2 ─ 3  (HCCS 56 GB/s)
+  Ring 1: NPU 4 ─ 5 ─ 6 ─ 7  (HCCS 56 GB/s)
+  Ring 0 ←→ Ring 1: PCIe/Host (~28 GB/s，约 1/2 带宽)
+```
+
 ## 6. 专家技能引擎 (Skill Engine)
 
 ### Python Skills (精确计算)
@@ -335,3 +406,233 @@ print(f"推荐方案: {result.best_scenario.name}")
 | Batch Size 变化 | 8 → 16 |
 | 优化措施 | 梯度累积、算子融合、通信掩盖优化 |
 | 精度变化 | FP32 → BF16 |
+
+## 9. AIC 硬件指标分析
+
+基于 AI Core 微架构级硬件计数器的深度算子瓶颈分析（通过 `msprof op --aic-metrics` 采集）。
+
+### 指标体系
+
+| 指标类别 | 包含指标 | 用途 |
+|---------|---------|------|
+| **算术利用率** | Cube/Vector/Scalar 利用率、总周期数 | 计算资源瓶颈诊断 |
+| **内存访问** | L2 命中率、L2 读写带宽、UB/L0 使用率 | 访存瓶颈诊断 |
+| **流水线** | 流水线利用率、停顿率、资源冲突率 | 流水线瓶颈诊断 |
+
+### 瓶颈分类
+
+| 瓶颈类型 | 判断标准 | 优化方向 |
+|---------|---------|---------|
+| **计算瓶颈** | Cube 利用率高、访存效率正常 | 算子融合减少 Launch 开销 |
+| **访存瓶颈** | L2 命中率低、带宽利用率高 | Tiling 优化、数据布局调整 |
+| **流水线瓶颈** | 停顿率高、资源冲突率高 | 指令调度优化 |
+| **混合瓶颈** | 多指标同时异常 | 综合优化策略 |
+
+### 严重度分级
+
+| 等级 | 说明 |
+|------|------|
+| `critical` | Cube 利用率 < 10% 或停顿率 > 50% |
+| `high` | Cube 利用率 < 30% 或 L2 命中率 < 50% |
+| `medium` | Cube 利用率 < 60% |
+| `low` | 存在优化空间但不紧急 |
+
+### CLI 使用
+
+```bash
+# 基本分析
+npu-analyzer analyze-aic /path/to/profiling
+
+# 按 Cube 利用率排序，显示 Top 30
+npu-analyzer analyze-aic /path/to/profiling -n 30 -s cube_util
+
+# 仅显示严重瓶颈
+npu-analyzer analyze-aic /path/to/profiling --severity critical
+
+# 输出到 CSV
+npu-analyzer analyze-aic /path/to/profiling -o bottleneck.csv
+
+# 显示所有指标
+npu-analyzer analyze-aic /path/to/profiling --show-all
+```
+
+### Python API
+
+```python
+from src.data_loader import AICMetrics, AICAnalysisResult
+
+# AICMetrics 包含单个算子的硬件指标
+metrics = AICMetrics(
+    op_name="MatMulV2",
+    duration_us=150.0,
+    arithmetic=ArithmeticUtilization(cube_utilization=85.0, vector_utilization=12.0),
+    memory=MemoryMetrics(l2_cache_hit_rate=92.0),
+    pipeline=PipelineMetrics(pipe_utilization=78.0, stall_rate=8.0),
+)
+
+# 获取瓶颈摘要
+summary = metrics.get_bottleneck_summary()
+print(f"瓶颈类型: {summary['bottleneck_type']}")
+print(f"严重度: {summary['severity']}")
+```
+
+## 10. 融合算子集成工作流
+
+基于 Profiling 数据自动发现融合机会并生成可直接集成的算子代码和补丁。
+
+### 工作流程
+
+```
+Profiling DB 数据
+        ↓
+┌──────────────────────┐
+│  API 调用栈分析       │
+│  定位源代码位置       │
+└──────────┬───────────┘
+        ↓
+┌──────────────────────┐
+│  时间窗口融合发现     │
+│  识别可融合的连续算子  │
+└──────────┬───────────┘
+        ↓
+┌──────────────────────┐
+│  LLM 生成融合代码     │
+│  Triton-Ascend Kernel │
+└──────────┬───────────┘
+        ↓
+┌──────────────────────┐
+│  集成方案生成         │
+│  补丁文件 + 集成指南   │
+└──────────────────────┘
+```
+
+### 支持的融合模式
+
+| 模式 | 说明 | 示例 |
+|------|------|------|
+| `add` | 加法融合 | `BiasAdd + Activation → FusedBiasAct` |
+| `mul` | 乘法融合 | `Scale + Dropout → FusedScaleDropout` |
+| `slice` | 切片融合 | `Slice + Concat → FusedSliceConcat` |
+| `strided` | 跨步访问融合 | `Gather + Transform → FusedGatherTransform` |
+
+### CLI 使用
+
+```bash
+# 基本集成分析
+npu-analyzer integrate /path/to/profiling
+
+# 指定融合模式和参数
+npu-analyzer integrate /path/to/profiling \
+    --patterns add,mul,slice,strided \
+    --time-window 100 \
+    --limit 50 \
+    -o ./integration_output
+```
+
+### 输出文件
+
+```
+integration_output/
+├── analysis_report.md     # 融合分析报告
+├── fusion_opportunities/  # 融合机会详情
+├── generated_kernels/     # 生成的算子代码
+└── integration_patches/   # 集成补丁
+```
+
+## 11. 数据验证与容错
+
+自动检测 Profiling 数据质量问题并提供容错处理能力。
+
+### 数据质量等级
+
+| 等级 | 说明 | 影响 |
+|------|------|------|
+| `excellent` | 完整且格式正确 | 所有分析正常运行 |
+| `good` | 轻微问题 | 不影响分析结果 |
+| `fair` | 中等问题 | 部分分析受限 |
+| `poor` | 严重问题 | 大部分分析受限 |
+| `critical` | 数据无法使用 | 无法进行分析 |
+
+### 问题类型检测
+
+| 问题类型 | 说明 | 自动修复 |
+|---------|------|---------|
+| `missing_field` | 缺少必要字段 | 填充默认值 |
+| `invalid_type` | 类型错误（如 Decimal） | 自动类型转换 |
+| `invalid_value` | 值超出范围 | 截断/修正 |
+| `corrupted_data` | 数据损坏 | 跳过并记录 |
+| `parse_error` | 解析错误 | 容错解析 |
+| `inconsistent` | 数据不一致 | 告警 |
+
+### Python API
+
+```python
+from src.data_loader.data_validator import (
+    ProfilingDataValidator, ProfilingDataSanitizer, RobustTimelineParser
+)
+
+# 数据质量检测
+validator = ProfilingDataValidator()
+report = validator.validate(profiling_path)
+print(f"质量等级: {report.quality_level.value}")
+print(f"问题数: {report.total_issues} (Error: {report.error_count}, Warning: {report.warning_count})")
+
+# 数据修复
+sanitizer = ProfilingDataSanitizer()
+clean_events = sanitizer.sanitize(raw_events)
+
+# 容错 Timeline 解析
+parser = RobustTimelineParser()
+events = parser.parse(timeline_path)  # 遇到错误不中断，记录并跳过
+```
+
+## 12. 弹性 LLM 接口
+
+提供重试、降级、超时处理等容错机制，确保 LLM 调用的可靠性。
+
+### 容错机制
+
+| 机制 | 说明 | 配置 |
+|------|------|------|
+| **自动重试** | 指数退避重试 | max_retries=3, base_delay=1s, max_delay=30s |
+| **超时控制** | 单次请求 + 总超时 | request_timeout=120s, total_timeout=300s |
+| **后端降级** | 主后端失败时自动切换 | fallback_backends=["ollama", "mock"] |
+| **连接池** | 多后端连接池管理 | LLMPool 并行调度 |
+| **错误统计** | 调用成功率/延迟监控 | 自动记录统计信息 |
+
+### Python API
+
+```python
+from src.llm import LLMConfig
+from src.llm.resilient_llm import ResilientLLM, ResilientConfig, RetryConfig, FallbackConfig
+
+# 配置弹性 LLM
+config = LLMConfig(backend="openai", model="gpt-4")
+resilient_config = ResilientConfig(
+    retry=RetryConfig(max_retries=3, base_delay=1.0),
+    fallback=FallbackConfig(
+        enabled=True,
+        fallback_backends=["deepseek", "ollama", "mock"],
+    ),
+)
+
+llm = ResilientLLM(config, resilient_config)
+response = await llm.complete(messages)
+# 如果 OpenAI 失败 → 自动重试 3 次 → 降级到 DeepSeek → 降级到 Ollama → Mock
+```
+
+### LLMPool 多后端调度
+
+```python
+from src.llm.resilient_llm import LLMPool
+
+# 创建多后端连接池
+pool = LLMPool(configs=[
+    LLMConfig(backend="openai"),
+    LLMConfig(backend="deepseek"),
+    LLMConfig(backend="ollama", model="qwen2.5:7b"),
+])
+
+# 自动选择可用后端
+response = await pool.complete(messages)
+```

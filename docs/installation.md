@@ -95,27 +95,95 @@ ollama list
 # 应显示 qwen2.5:7b
 ```
 
-## 依赖说明
+## 可选依赖安装
 
-### 基础依赖
-- pandas >= 2.0
-- numpy >= 1.24
-- ijson >= 3.2
-- pyyaml >= 6.0
+NPU MFU Analyzer 使用 extras 管理可选依赖，按需安装：
 
-### Web 依赖 (可选)
-- fastapi >= 0.100
-- uvicorn >= 0.23
-- websockets >= 11.0
+```bash
+# 安装所有依赖（推荐）
+pip install -e ".[all]"
 
-### LLM 依赖 (可选)
-- httpx >= 0.24
-- aiohttp >= 3.8
+# 或按需安装
+pip install -e .                  # 仅基础功能（CLI analyze/info/summary）
+pip install -e ".[web]"           # Web 界面 + REST API + WebSocket
+pip install -e ".[claude]"        # Claude API 后端
+pip install -e ".[local-llm]"     # 本地大模型（transformers + torch）
+pip install -e ".[langchain]"     # LangChain 集成
+pip install -e ".[dev]"           # 开发工具（pytest/ruff/mypy）
+```
 
-### 开发依赖
-- pytest >= 7.0
-- ruff >= 0.1
-- mypy >= 1.0
+### 依赖清单
+
+| 安装组 | 主要依赖 | 用途 |
+|--------|---------|------|
+| **基础** | numpy, pandas, ijson, sqlalchemy, pyyaml, pydantic, click, networkx, jinja2, openai, aiohttp | CLI 分析核心 |
+| **[web]** | fastapi, uvicorn, websockets, python-multipart, aiofiles | Web 界面 |
+| **[claude]** | anthropic | Claude API 后端 |
+| **[local-llm]** | transformers, torch, accelerate | 本地大模型推理 |
+| **[langchain]** | langchain, langchain-openai | LangChain 集成 |
+| **[dev]** | pytest, pytest-cov, pytest-asyncio, pytest-mock, ruff, mypy | 测试与检查 |
+
+## 升级指南
+
+```bash
+# 激活虚拟环境
+source .venv/bin/activate
+
+# 拉取最新代码
+git pull origin master
+
+# 升级依赖
+pip install -e ".[all]" --upgrade
+
+# 验证安装
+npu-analyzer version
+```
+
+## API Key 配置
+
+### DeepSeek
+
+```bash
+export DEEPSEEK_API_KEY="sk-your-deepseek-key"
+npu-analyzer analyze /path/to/profiling -b deepseek
+```
+
+### OpenAI
+
+```bash
+export OPENAI_API_KEY="sk-your-openai-key"
+npu-analyzer analyze /path/to/profiling -b openai
+```
+
+### Claude / Anthropic
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-your-key"
+npu-analyzer analyze /path/to/profiling -b claude
+```
+
+**使用兼容 API（如智谱 GLM）**：
+```bash
+export ANTHROPIC_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+export ANTHROPIC_API_KEY="your_glm_key"
+npu-analyzer analyze /path/to/profiling -b claude -m GLM-4.7
+```
+
+## 验证安装
+
+```bash
+# 检查 CLI 是否可用
+npu-analyzer version
+
+# 检查 Profiling 数据加载
+npu-analyzer info /path/to/profiling
+
+# 测试 Mock 模式分析（不需要 LLM）
+npu-analyzer analyze /path/to/profiling -b mock
+
+# 运行测试
+pytest tests/unit/ -v
+```
 
 ## 常见问题
 
@@ -132,4 +200,20 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 **A:** 确认 Ollama 服务正在运行：
 ```bash
 curl http://localhost:11434/api/tags
+```
+
+### Q: ijson 未安装导致大文件解析失败
+**A:** `ijson` 是基础依赖，应随 `pip install -e .` 一起安装。如果缺失：
+```bash
+pip install ijson>=3.2.0
+```
+
+### Q: 如何在无网络环境使用
+**A:** 使用 Ollama 本地部署或 Mock 后端：
+```bash
+# Ollama 本地模型
+npu-analyzer analyze /path/to/profiling -b ollama
+
+# Mock 模式（仅数据分析，无 LLM 推理）
+npu-analyzer analyze /path/to/profiling -b mock
 ```
