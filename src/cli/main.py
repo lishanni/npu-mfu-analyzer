@@ -942,6 +942,612 @@ def generate(
 
 
 @cli.command()
+@click.argument("profiling_path", type=click.Path(exists=True))
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    default="./integration_output",
+    help="集成输出目录（默认: ./integration_output）"
+)
+@click.option(
+    "--patterns",
+    type=str,
+    default="add,mul,slice,strided",
+    help="融合模式列表（逗号分隔，默认: add,mul,slice,strided）"
+)
+@click.option(
+    "--time-window",
+    type=int,
+    default=100,
+    help="时间窗口（微秒，默认: 100）"
+)
+@click.option(
+    "--limit",
+    type=int,
+    default=50,
+    help="分析的最大调用数（默认: 50）"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="详细输出"
+)
+def integrate(
+    profiling_path: str,
+    output: str,
+    patterns: str,
+    time_window: int,
+    limit: int,
+    verbose: bool
+):
+    """
+    分析 Profiling 数据并生成融合算子集成方案
+
+    完整的自动化工作流：
+    1. 分析 Trace 数据中的 API 调用栈
+    2. 定位需要替换的算子调用源代码位置
+    3. 生成自定义融合算子代码
+    4. 生成集成到训练脚本的补丁和指南
+
+    PROFILING_PATH: Profiling 数据目录路径
+
+    示例:
+        npu-analyzer integrate /path/to/profiling
+        npu-analyzer integrate /path/to/profiling -o ./patches
+        npu-analyzer integrate /path/to/profiling --patterns add,mul --time-window 50
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    from src.cli.integration_workflow import IntegrationWorkflow
+
+    click.echo(click.style("🔧 启动融合算子集成工作流", fg="cyan", bold=True))
+    click.echo(f"   Profiling 数据: {profiling_path}")
+    click.echo(f"   输出目录: {output}")
+    click.echo(f"   融合模式: {patterns}")
+    click.echo(f"   时间窗口: {time_window} μs")
+    click.echo("")
+
+    try:
+        # 解析融合模式
+        fusion_patterns = [p.strip() for p in patterns.split(",")]
+
+        # 创建工作流
+        workflow = IntegrationWorkflow(
+            profiling_path=profiling_path,
+            output_dir=output
+        )
+
+        # 执行工作流
+        result = workflow.run(
+            fusion_patterns=fusion_patterns,
+            time_window_ns=time_window * 1000,  # 转换为纳秒
+            limit=limit
+        )
+
+        # 输出结果
+        if result["success"]:
+            click.echo("\n" + "=" * 70)
+            click.echo(click.style("📊 集成工作流结果摘要", fg="cyan", bold=True))
+            click.echo("=" * 70)
+            click.echo(click.style(f"✓ 找到融合模式: {result['fusion_patterns_found']} 个", fg="green"))
+            click.echo(click.style(f"✓ 生成算子代码: {result['operators_generated']} 个", fg="green"))
+            click.echo(click.style(f"✓ 输出目录: {result['output_dir']}", fg="blue"))
+            click.echo("")
+            click.echo(click.style("📁 生成的文件:", fg="yellow", bold=True))
+            click.echo(f"  - 自定义算子代码: *_operator.py")
+            click.echo(f"  - 集成补丁: *_patch.txt")
+            click.echo(f"  - 集成指南: {result['integration_guide']}")
+            click.echo("")
+            click.echo(click.style("💡 下一步:", fg="yellow", bold=True))
+            click.echo(f"   1. 查看集成指南: cat {result['integration_guide']}")
+            click.echo(f"   2. 复制算子代码到项目: cp {result['output_dir']}/*_operator.py /path/to/project/")
+            click.echo(f"   3. 按照指南修改训练脚本")
+            click.echo("=" * 70)
+        else:
+            click.echo(click.style(f"❌ 工作流失败: {result.get('error', 'Unknown error')}", fg="red"))
+            sys.exit(1)
+
+    except Exception as e:
+        click.echo(click.style(f"❌ 发生错误: {e}", fg="red"))
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("profiling_path", type=click.Path(exists=True))
+@click.option(
+    "--top-n", "-n",
+    type=int,
+    default=20,
+    help="显示 Top N 算子（默认: 20）"
+)
+@click.option(
+    "--sort-by", "-s",
+    type=click.Choice(["duration", "cube_util", "l2_hit", "stall_rate", "name"]),
+    default="duration",
+    help="排序方式（默认: duration）"
+)
+@click.option(
+    "--show-all", "-a",
+    is_flag=True,
+    help="显示所有指标"
+)
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    help="输出到文件（CSV 或 Markdown）"
+)
+@click.option(
+    "--severity",
+    type=click.Choice(["all", "critical", "high", "medium", "low"]),
+    default="all",
+    help="按严重度筛选（默认: all）"
+)
+def analyze_aic(
+    profiling_path: str,
+    top_n: int,
+    sort_by: str,
+    show_all: bool,
+    output: Optional[str],
+    severity: str
+):
+    """
+    分析 AIC Metrics 硬件指标数据
+
+    解析 msprof op --aic-metrics 生成的详细硬件指标，分析算子瓶颈。
+    支持 Cube 利用率、L2 缓存命中率、流水线利用率等指标分析。
+
+    PROFILING_PATH: Profiling 数据目录路径
+
+    示例:
+        npu-analyzer analyze-aic /path/to/profiling
+        npu-analyzer analyze-aic /path/to/profiling --top-n 30 --sort-by cube_util
+        npu-analyzer analyze-aic /path/to/profiling --severity critical --output report.md
+    """
+    from src.data_loader.profiling_loader import ProfilingLoader
+    from src.data_loader.aic_metrics import (
+        CRITICAL_THRESHOLD,
+        HIGH_THRESHOLD,
+        BOTTLENECK_COMPUTE,
+        BOTTLENECK_MEMORY,
+        BOTTLENECK_PIPELINE,
+    )
+
+    click.echo(click.style("🔍 分析 AIC Metrics 硬件指标", fg="cyan", bold=True))
+    click.echo(f"   数据路径: {profiling_path}")
+    click.echo(f"   Top N: {top_n}")
+    click.echo(f"   排序: {sort_by}")
+    click.echo("")
+
+    # 检查 AIC metrics 是否可用
+    import glob
+    opprof_dirs = glob.glob(str(Path(profiling_path) / "OPPROF_*"), recursive=True)
+    if not opprof_dirs:
+        click.echo(click.style("⚠️  未找到 AIC metrics 数据", fg="yellow"))
+        click.echo("   请使用 msprof op --aic-metrics 生成数据")
+        click.echo("")
+        click.echo("   示例命令:")
+        click.echo("     msprof op --aic-metrics --output /path/to/profiling")
+        sys.exit(1)
+
+    # 加载 AIC metrics
+    try:
+        loader = ProfilingLoader(profiling_path)
+        aic_metrics = loader.get_aic_metrics()
+
+        if not aic_metrics:
+            click.echo(click.style("⚠️  未找到有效的 AIC metrics 数据", fg="yellow"))
+            sys.exit(1)
+
+        click.echo(click.style(f"✅ 加载了 {len(aic_metrics)} 个算子的 AIC metrics", fg="green"))
+        click.echo("")
+
+        # 转换为列表以便排序
+        metrics_list = []
+        for op_name, metrics in aic_metrics.items():
+            cube_util = metrics.arithmetic.cube_utilization if metrics.arithmetic else 100.0
+            l2_hit = metrics.memory.l2_cache_hit_rate if metrics.memory else 100.0
+            stall_rate = metrics.pipeline.stall_rate if metrics.pipeline else 0.0
+
+            # 确定瓶颈类型和严重度
+            if cube_util < CRITICAL_THRESHOLD or l2_hit < CRITICAL_THRESHOLD:
+                sev = "critical"
+            elif stall_rate > 50:
+                sev = "high"
+            elif cube_util < HIGH_THRESHOLD or l2_hit < HIGH_THRESHOLD:
+                sev = "medium"
+            else:
+                sev = "low"
+
+            metrics_list.append({
+                "name": op_name,
+                "metrics": metrics,
+                "cube_util": cube_util,
+                "l2_hit": l2_hit,
+                "stall_rate": stall_rate,
+                "duration": metrics.duration_us,
+                "severity": sev
+            })
+
+        # 按 severity 和选定的指标排序
+        severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        metrics_list.sort(key=lambda x: (severity_order[x["severity"]], -x.get(sort_by, 0)))
+
+        # 筛选严重度
+        if severity != "all":
+            metrics_list = [m for m in metrics_list if m["severity"] == severity]
+
+        # 限制显示数量
+        display_list = metrics_list[:top_n]
+
+        # 输出结果
+        click.echo("=" * 80)
+        click.echo(click.style(f"AIC Metrics 分析结果 (Top {len(display_list)})", fg="cyan", bold=True))
+        click.echo("=" * 80)
+
+        results = []
+        for i, item in enumerate(display_list, 1):
+            m = item["metrics"]
+            sev = item["severity"]
+
+            # 严重度颜色
+            if sev == "critical":
+                sev_emoji = "🔴"
+                sev_style = {"fg": "red"}
+            elif sev == "high":
+                sev_emoji = "🟠"
+                sev_style = {"fg": "yellow"}
+            elif sev == "medium":
+                sev_emoji = "🟡"
+                sev_style = {"fg": "yellow"}
+            else:
+                sev_emoji = "🟢"
+                sev_style = {"fg": "green"}
+
+            click.echo(f"\n{i}. {sev_emoji} {click.style(item['name'], bold=True)}")
+
+            # 基本指标
+            click.echo(f"   执行时间: {m.duration_us:.2f} μs")
+            click.echo(f"   类型: {m.op_type}")
+
+            if m.arithmetic:
+                click.echo(f"   算术单元:")
+                cube_color = "red" if item['cube_util'] < CRITICAL_THRESHOLD else "green"
+                click.echo(click.style(f"     Cube:   {item['cube_util']:.1f}%", fg=cube_color))
+                click.echo(f"     Vector: {m.arithmetic.vector_utilization:.1f}%")
+                click.echo(f"     Scalar: {m.arithmetic.scalar_utilization:.1f}%")
+
+            if m.memory:
+                click.echo(f"   内存:")
+                l2_color = "red" if item['l2_hit'] < CRITICAL_THRESHOLD else "green"
+                click.echo(click.style(f"     L2 命中率: {item['l2_hit']:.1f}%", fg=l2_color))
+                click.echo(f"     UB 使用率: {m.memory.ub_usage:.1f}%")
+                click.echo(f"     L0 使用率: {m.memory.l0_usage:.1f}%")
+
+            if m.pipeline:
+                click.echo(f"   流水线:")
+                click.echo(f"     利用率: {m.pipeline.pipe_utilization:.1f}%")
+                stall_color = "red" if item['stall_rate'] > 50 else "green"
+                click.echo(click.style(f"     停顿率: {item['stall_rate']:.1f}%", fg=stall_color))
+
+            # 瓶颈诊断
+            if item['cube_util'] < CRITICAL_THRESHOLD:
+                click.echo(click.style(f"   ⚠️  计算瓶颈: Cube 利用率过低", fg="red"))
+            elif item['l2_hit'] < CRITICAL_THRESHOLD:
+                click.echo(click.style(f"   ⚠️  内存瓶颈: L2 缓存命中率过低", fg="red"))
+            elif item['stall_rate'] > 50:
+                click.echo(click.style(f"   ⚠️  流水线瓶颈: 停顿率过高", fg="yellow"))
+
+            results.append(item)
+
+        # 统计摘要
+        click.echo("\n" + "=" * 80)
+        click.echo(click.style("瓶颈统计", fg="cyan", bold=True))
+        click.echo("=" * 80)
+
+        critical_count = sum(1 for m in metrics_list if m["severity"] == "critical")
+        high_count = sum(1 for m in metrics_list if m["severity"] == "high")
+        medium_count = sum(1 for m in metrics_list if m["severity"] == "medium")
+        low_count = sum(1 for m in metrics_list if m["severity"] == "low")
+
+        click.echo(f"🔴 严重 (critical): {critical_count}")
+        click.echo(f"🟠 高 (high):       {high_count}")
+        click.echo(f"🟡 中 (medium):    {medium_count}")
+        click.echo(f"🟢 低 (low):       {low_count}")
+
+        # 输出到文件
+        if output:
+            output_path = Path(output)
+            output_str = ""
+
+            if output_path.suffix == ".csv":
+                # CSV 格式
+                import csv
+                import io
+
+                output = io.StringIO()
+                writer = csv.writer(output)
+                writer.writerow([
+                    "算子名称", "严重度", "执行时间(μs)", "Cube利用率(%)",
+                    "Vector利用率(%)", "Scalar利用率(%)", "L2命中率(%)",
+                    "UB使用率(%)", "L0使用率(%)", "流水线利用率(%)", "停顿率(%)"
+                ])
+
+                for item in results:
+                    m = item["metrics"]
+                    writer.writerow([
+                        item["name"], item["severity"], f"{m.duration_us:.2f}",
+                        f"{item['cube_util']:.1f}",
+                        f"{m.arithmetic.vector_utilization:.1f}" if m.arithmetic else "",
+                        f"{m.arithmetic.scalar_utilization:.1f}" if m.arithmetic else "",
+                        f"{item['l2_hit']:.1f}",
+                        f"{m.memory.ub_usage:.1f}" if m.memory else "",
+                        f"{m.memory.l0_usage:.1f}" if m.memory else "",
+                        f"{m.pipeline.pipe_utilization:.1f}" if m.pipeline else "",
+                        f"{item['stall_rate']:.1f}"
+                    ])
+
+                output_str = output.getvalue()
+            else:
+                # Markdown 格式
+                output_str = f"# AIC Metrics 分析报告\n\n"
+                output_str += f"数据路径: `{profiling_path}`\n\n"
+                output_str += f"分析时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+
+                output_str += "## 瓶颈统计\n\n"
+                output_str += f"- 🔴 严重: {critical_count}\n"
+                output_str += f"- 🟠 高: {high_count}\n"
+                output_str += f"- 🟡 中: {medium_count}\n"
+                output_str += f"- 🟢 低: {low_count}\n\n"
+
+                output_str += f"## Top {len(results)} 算子详情\n\n"
+
+                for i, item in enumerate(results, 1):
+                    m = item["metrics"]
+                    sev_emoji = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢"}[item["severity"]]
+
+                    output_str += f"### {i}. {sev_emoji} {item['name']}\n\n"
+                    output_str += f"- **严重度**: {item['severity']}\n"
+                    output_str += f"- **执行时间**: {m.duration_us:.2f} μs\n"
+                    output_str += f"- **类型**: {m.op_type}\n\n"
+
+                    if m.arithmetic:
+                        output_str += "**算术单元**:\n"
+                        output_str += f"- Cube: {item['cube_util']:.1f}%\n"
+                        output_str += f"- Vector: {m.arithmetic.vector_utilization:.1f}%\n"
+                        output_str += f"- Scalar: {m.arithmetic.scalar_utilization:.1f}%\n\n"
+
+                    if m.memory:
+                        output_str += "**内存**:\n"
+                        output_str += f"- L2 命中率: {item['l2_hit']:.1f}%\n"
+                        output_str += f"- UB 使用率: {m.memory.ub_usage:.1f}%\n"
+                        output_str += f"- L0 使用率: {m.memory.l0_usage:.1f}%\n\n"
+
+                    if m.pipeline:
+                        output_str += "**流水线**:\n"
+                        output_str += f"- 利用率: {m.pipeline.pipe_utilization:.1f}%\n"
+                        output_str += f"- 停顿率: {item['stall_rate']:.1f}%\n\n"
+
+                output_str += "\n---\n\n*本报告由 npu-mfu-analyzer 自动生成*"
+
+            output_path.write_text(output_str, encoding="utf-8")
+            click.echo(f"\n📄 报告已保存到: {output_path}")
+
+    except Exception as e:
+        click.echo(click.style(f"❌ 发生错误: {e}", fg="red"))
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
+@click.argument("path_a", type=click.Path(exists=True))
+@click.argument("path_b", type=click.Path(exists=True))
+@click.option(
+    "--output", "-o",
+    type=click.Path(),
+    help="输出报告路径（默认输出到终端）"
+)
+@click.option(
+    "--backend", "-b",
+    type=click.Choice(["openai", "claude", "ollama", "deepseek", "mock"]),
+    default="mock",
+    help="LLM 后端（默认: mock，使用规则引擎）"
+)
+@click.option(
+    "--model", "-m",
+    type=str,
+    default=None,
+    help="LLM 模型名称"
+)
+@click.option(
+    "--format", "-f",
+    type=click.Choice(["markdown", "html", "md"]),
+    default="markdown",
+    help="报告格式（默认: markdown）"
+)
+@click.option(
+    "--label-a",
+    type=str,
+    default=None,
+    help="基准版本标签（如: v2.0-升级前）"
+)
+@click.option(
+    "--label-b",
+    type=str,
+    default=None,
+    help="当前版本标签（如: v2.1-升级后）"
+)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="跳过相似度检查，强制对比"
+)
+@click.option(
+    "--verbose", "-v",
+    is_flag=True,
+    help="详细输出"
+)
+def compare(
+    path_a: str,
+    path_b: str,
+    output: Optional[str],
+    backend: str,
+    model: Optional[str],
+    format: str,
+    label_a: Optional[str],
+    label_b: Optional[str],
+    force: bool,
+    verbose: bool
+):
+    """
+    对比两个 Profiling 数据
+
+    比较两次 Profiling 的差异，分析性能变化的根本原因。
+
+    \b
+    典型场景:
+    - 软件版本升级前后的性能对比
+    - 不同并行策略的性能对比
+    - 参数调优前后的性能对比
+
+    \b
+    示例:
+        npu-analyzer compare /path/to/profiling_before /path/to/profiling_after
+        npu-analyzer compare /p/v1 /p/v2 --label-a "CANN 8.0" --label-b "CANN 8.1" -b openai
+        npu-analyzer compare /p/tp4 /p/tp8 --label-a "TP=4" --label-b "TP=8" --force
+    """
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    # 默认标签
+    if not label_a:
+        label_a = f"基准版本 (A): {Path(path_a).name}"
+    if not label_b:
+        label_b = f"当前版本 (B): {Path(path_b).name}"
+
+    click.echo(click.style("🔄 Profiling 对比分析", fg="cyan", bold=True))
+    click.echo(f"   A (基准): {path_a}")
+    click.echo(f"   B (当前): {path_b}")
+    click.echo(f"   LLM 后端: {backend}")
+    click.echo(f"   强制对比: {'是' if force else '否'}")
+    click.echo("")
+
+    try:
+        from src.analyzers.comparison_orchestrator import ComparisonOrchestrator, ComparisonReport
+        from src.llm.llm_interface import LLMConfig
+        from src.report.report_generator import ReportFormat
+
+        # 配置 LLM
+        llm_config = LLMConfig(backend=backend)
+        if model:
+            llm_config.model = model
+
+        # 确定输出格式
+        if format in ("html",):
+            output_format = ReportFormat.HTML
+        else:
+            output_format = ReportFormat.MARKDOWN
+
+        # 创建 Orchestrator
+        orchestrator = ComparisonOrchestrator(
+            path_a=path_a,
+            path_b=path_b,
+            label_a=label_a,
+            label_b=label_b,
+            llm_config=llm_config,
+            force=force,
+        )
+
+        # 执行对比
+        click.echo("⏳ 正在加载和分析 Profiling 数据...")
+        report = asyncio.run(orchestrator.run(output_format=output_format))
+
+        if not report.success:
+            if report.error == "NOT_COMPARABLE":
+                click.echo("")
+                click.echo(click.style("❌ 两个 Profiling 数据不适合对比", fg="red", bold=True))
+                click.echo("")
+                if report.similarity:
+                    click.echo(f"   相似度评分: {report.similarity.overall_score * 100:.0f}%")
+                    click.echo(f"   {report.similarity.summary}")
+                    if report.similarity.warnings:
+                        click.echo("")
+                        for w in report.similarity.warnings:
+                            click.echo(f"   ⚠️ {w}")
+                click.echo("")
+                click.echo(click.style(
+                    "💡 提示: 使用 --force 选项可跳过相似度检查强制对比", fg="yellow"
+                ))
+
+                # 即使不可比，仍然输出报告（如果有）
+                if report.final_report and output:
+                    output_path = Path(output)
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    output_path.write_text(report.final_report, encoding="utf-8")
+                    click.echo(f"\n📄 报告已保存到: {output_path}")
+
+                sys.exit(1)
+            else:
+                click.echo(click.style(f"❌ 对比分析失败: {report.error}", fg="red"))
+                sys.exit(1)
+
+        # 输出结果
+        click.echo("")
+        click.echo(click.style("✅ 对比分析完成", fg="green", bold=True))
+        click.echo("")
+
+        # 显示摘要
+        if report.diff:
+            verdict_map = {
+                "improved": ("性能提升 ✅", "green"),
+                "degraded": ("性能劣化 ⚠️", "red"),
+                "mixed": ("喜忧参半 ⚖️", "yellow"),
+                "unchanged": ("基本不变 ➡️", "blue"),
+            }
+            verdict_text, color = verdict_map.get(
+                report.diff.overall_verdict, ("N/A", "white")
+            )
+            click.echo(f"   整体判断: {click.style(verdict_text, fg=color, bold=True)}")
+
+            if report.diff.primary_changes:
+                click.echo("")
+                click.echo("   主要变化:")
+                for change in report.diff.primary_changes:
+                    click.echo(f"   • {change}")
+
+        if report.similarity:
+            click.echo(f"\n   相似度评分: {report.similarity.overall_score * 100:.0f}%")
+
+        if report.recommendations:
+            click.echo("")
+            click.echo(click.style("   优化建议:", fg="yellow", bold=True))
+            for i, rec in enumerate(report.recommendations[:5], 1):
+                click.echo(f"   {i}. {rec}")
+
+        # 输出报告
+        if output:
+            output_path = Path(output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(report.final_report, encoding="utf-8")
+            click.echo(f"\n📄 报告已保存到: {output_path}")
+        elif report.final_report:
+            click.echo("")
+            click.echo("=" * 70)
+            click.echo(report.final_report)
+
+    except Exception as e:
+        click.echo(click.style(f"❌ 发生错误: {e}", fg="red"))
+        if verbose:
+            import traceback
+            traceback.print_exc()
+        sys.exit(1)
+
+
+@cli.command()
 @click.option(
     "--host", "-h",
     type=str,

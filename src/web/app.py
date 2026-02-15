@@ -128,6 +128,17 @@ class AnalyzeRequest(BaseModel):
     output_format: str = Field(default="html", description="输出格式 (markdown/html/json)")
 
 
+class CompareRequest(BaseModel):
+    """对比分析请求"""
+    path_a: str = Field(..., description="基准 Profiling 数据路径")
+    path_b: str = Field(..., description="当前 Profiling 数据路径")
+    label_a: str = Field(default="基准版本 (A)", description="版本 A 标签")
+    label_b: str = Field(default="当前版本 (B)", description="版本 B 标签")
+    llm_backend: str = Field(default="mock", description="LLM 后端 (mock/openai/claude)")
+    output_format: str = Field(default="html", description="输出格式 (markdown/html)")
+    force: bool = Field(default=False, description="跳过相似度检查，强制对比")
+
+
 class AnalyzeResponse(BaseModel):
     """分析响应"""
     task_id: str
@@ -371,6 +382,164 @@ async def get_report(task_id: str):
         return FileResponse(report_path, media_type="application/json")
     else:
         return FileResponse(report_path, media_type="text/markdown")
+
+
+@app.post("/api/compare", response_model=AnalyzeResponse)
+async def start_comparison(request: CompareRequest, background_tasks: BackgroundTasks):
+    """
+    启动对比分析任务
+
+    对比两个 Profiling 数据的差异，分析性能变化的根本原因。
+    """
+    # 验证路径
+    path_a = Path(request.path_a)
+    path_b = Path(request.path_b)
+
+    if not path_a.exists():
+        raise HTTPException(status_code=400, detail=f"路径 A 不存在: {request.path_a}")
+    if not path_b.exists():
+        raise HTTPException(status_code=400, detail=f"路径 B 不存在: {request.path_b}")
+
+    # 创建任务
+    task = AnalysisTask(
+        profiling_path=f"{request.path_a} vs {request.path_b}",
+        message="对比分析任务已创建，等待执行"
+    )
+    tasks[task.id] = task
+
+    # 后台执行对比
+    background_tasks.add_task(
+        run_comparison_task,
+        task.id,
+        request.path_a,
+        request.path_b,
+        request.label_a,
+        request.label_b,
+        request.llm_backend,
+        request.output_format,
+        request.force,
+    )
+
+    return AnalyzeResponse(
+        task_id=task.id,
+        status=task.status,
+        message="对比分析任务已启动"
+    )
+
+
+async def run_comparison_task(
+    task_id: str,
+    path_a: str,
+    path_b: str,
+    label_a: str,
+    label_b: str,
+    llm_backend: str,
+    output_format: str,
+    force: bool,
+):
+    """后台执行对比分析任务"""
+    task = tasks.get(task_id)
+    if not task:
+        return
+
+    try:
+        from src.analyzers.comparison_orchestrator import ComparisonOrchestrator
+
+        # 更新状态
+        task.status = TaskStatus.RUNNING
+        task.progress = 10
+        task.message = "正在加载 Profiling 数据..."
+        await manager.send_progress(task_id, {"progress": 10, "message": task.message})
+
+        # 创建 Orchestrator
+        llm_config = LLMConfig(backend=llm_backend)
+        orchestrator = ComparisonOrchestrator(
+            path_a=path_a,
+            path_b=path_b,
+            label_a=label_a,
+            label_b=label_b,
+            llm_config=llm_config,
+            force=force,
+        )
+
+        task.progress = 30
+        task.message = "正在进行相似度检测和差异分析..."
+        await manager.send_progress(task_id, {"progress": 30, "message": task.message})
+
+        # 确定输出格式
+        format_map = {
+            "markdown": ReportFormat.MARKDOWN,
+            "html": ReportFormat.HTML,
+        }
+        report_format = format_map.get(output_format, ReportFormat.HTML)
+
+        # 执行对比
+        report = await orchestrator.run(output_format=report_format)
+
+        task.progress = 80
+        task.message = "正在生成对比报告..."
+        await manager.send_progress(task_id, {"progress": 80, "message": task.message})
+
+        # 保存报告
+        ext = "html" if output_format == "html" else "md"
+        report_filename = f"{task_id}.{ext}"
+        report_path = REPORT_DIR / report_filename
+
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(report.final_report)
+
+        if report.success:
+            task.status = TaskStatus.COMPLETED
+            task.progress = 100
+            task.message = f"对比分析完成: {report.summary}"
+            task.completed_at = datetime.now().isoformat()
+            task.report_path = str(report_path)
+
+            await manager.send_progress(task_id, {
+                "progress": 100,
+                "message": task.message,
+                "status": "completed",
+                "report_url": f"/api/reports/{task_id}",
+            })
+        else:
+            # 不可比或其他失败
+            if report.error == "NOT_COMPARABLE":
+                task.status = TaskStatus.COMPLETED  # 仍视为完成，有报告
+                task.progress = 100
+                task.message = f"对比分析完成（不建议对比）: {report.summary}"
+                task.completed_at = datetime.now().isoformat()
+                task.report_path = str(report_path)
+
+                await manager.send_progress(task_id, {
+                    "progress": 100,
+                    "message": task.message,
+                    "status": "completed",
+                    "report_url": f"/api/reports/{task_id}",
+                    "warning": "NOT_COMPARABLE",
+                })
+            else:
+                task.status = TaskStatus.FAILED
+                task.error = report.error
+                task.message = f"对比分析失败: {report.error}"
+                await manager.send_progress(task_id, {
+                    "progress": 0,
+                    "message": task.message,
+                    "status": "failed",
+                    "error": report.error,
+                })
+
+    except Exception as e:
+        logger.error(f"Comparison failed: {e}", exc_info=True)
+        task.status = TaskStatus.FAILED
+        task.error = str(e)
+        task.message = f"对比分析失败: {e}"
+
+        await manager.send_progress(task_id, {
+            "progress": 0,
+            "message": task.message,
+            "status": "failed",
+            "error": str(e),
+        })
 
 
 @app.delete("/api/tasks/{task_id}")

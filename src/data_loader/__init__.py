@@ -2,5 +2,22 @@
 
 from src.data_loader.profiling_loader import ProfilingLoader
 from src.data_loader.stream_parser import StreamParser
+from src.data_loader.aic_metrics import (
+    AICMetrics,
+    AICAnalysisResult,
+    ArithmeticUtilization,
+    MemoryMetrics,
+    PipelineMetrics,
+    DetailedOperatorAnalysisData,
+)
 
-__all__ = ["ProfilingLoader", "StreamParser"]
+__all__ = [
+    "ProfilingLoader",
+    "StreamParser",
+    "AICMetrics",
+    "AICAnalysisResult",
+    "ArithmeticUtilization",
+    "MemoryMetrics",
+    "PipelineMetrics",
+    "DetailedOperatorAnalysisData",
+]

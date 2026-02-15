@@ -236,8 +236,14 @@
     </div>
     
     <div class="container">
+        <!-- 功能切换 Tab -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('analyze')">📊 单次分析</div>
+            <div class="tab" onclick="switchTab('compare')">🔄 对比分析</div>
+        </div>
+
         <!-- 分析表单 -->
-        <div class="card">
+        <div class="card" id="analyzeTab">
             <h2>📊 开始分析</h2>
             <form id="analyzeForm">
                 <div class="form-group">
@@ -271,6 +277,66 @@
             </form>
         </div>
         
+        <!-- 对比分析表单 -->
+        <div class="card hidden" id="compareTab">
+            <h2>🔄 对比分析</h2>
+            <p style="margin-bottom:16px;color:#5f6368;font-size:14px;">
+                对比两次 Profiling 数据，分析性能变化（如：升级前后、不同并行策略）
+            </p>
+            <form id="compareForm">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                    <div class="form-group">
+                        <label for="pathA">基准版本 (A) 路径</label>
+                        <input type="text" id="pathA"
+                               placeholder="/path/to/profiling_before"
+                               required>
+                    </div>
+                    <div class="form-group">
+                        <label for="pathB">当前版本 (B) 路径</label>
+                        <input type="text" id="pathB"
+                               placeholder="/path/to/profiling_after"
+                               required>
+                    </div>
+                    <div class="form-group">
+                        <label for="labelA">A 版本标签（可选）</label>
+                        <input type="text" id="labelA"
+                               placeholder="如: CANN 8.0 / TP=4">
+                    </div>
+                    <div class="form-group">
+                        <label for="labelB">B 版本标签（可选）</label>
+                        <input type="text" id="labelB"
+                               placeholder="如: CANN 8.1 / TP=8">
+                    </div>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;">
+                    <div class="form-group">
+                        <label for="compareLlm">LLM 后端</label>
+                        <select id="compareLlm">
+                            <option value="mock">Mock (规则引擎)</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Claude</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="compareFormat">报告格式</label>
+                        <select id="compareFormat">
+                            <option value="html">HTML</option>
+                            <option value="markdown">Markdown</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label style="display:flex;align-items:center;gap:6px;margin-top:28px;">
+                            <input type="checkbox" id="forceCompare">
+                            强制对比（跳过相似度检查）
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="btn" id="compareBtn">
+                    🔄 开始对比
+                </button>
+            </form>
+        </div>
+
         <!-- 进度显示 -->
         <div class="card hidden" id="progressCard">
             <h2>⏳ 分析进度</h2>
@@ -308,6 +374,74 @@
         const API_BASE = '';  // 当前域名
         let currentTaskId = null;
         let ws = null;
+
+        // Tab 切换
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('analyzeTab').classList.add('hidden');
+            document.getElementById('compareTab').classList.add('hidden');
+
+            if (tab === 'analyze') {
+                document.getElementById('analyzeTab').classList.remove('hidden');
+                document.querySelectorAll('.tab')[0].classList.add('active');
+            } else {
+                document.getElementById('compareTab').classList.remove('hidden');
+                document.querySelectorAll('.tab')[1].classList.add('active');
+            }
+        }
+
+        // 对比分析表单提交
+        document.getElementById('compareForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const pathA = document.getElementById('pathA').value;
+            const pathB = document.getElementById('pathB').value;
+            const labelA = document.getElementById('labelA').value || `基准版本: ${pathA.split('/').pop()}`;
+            const labelB = document.getElementById('labelB').value || `当前版本: ${pathB.split('/').pop()}`;
+            const llmBackend = document.getElementById('compareLlm').value;
+            const outputFormat = document.getElementById('compareFormat').value;
+            const force = document.getElementById('forceCompare').checked;
+
+            try {
+                document.getElementById('compareBtn').disabled = true;
+                document.getElementById('compareBtn').textContent = '对比中...';
+
+                const response = await fetch(`${API_BASE}/api/compare`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        path_a: pathA,
+                        path_b: pathB,
+                        label_a: labelA,
+                        label_b: labelB,
+                        llm_backend: llmBackend,
+                        output_format: outputFormat,
+                        force: force
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '请求失败');
+                }
+
+                const data = await response.json();
+                currentTaskId = data.task_id;
+
+                // 显示进度卡片
+                document.getElementById('progressCard').classList.remove('hidden');
+                document.getElementById('reportCard').classList.add('hidden');
+
+                // 连接 WebSocket
+                connectWebSocket(currentTaskId);
+
+            } catch (error) {
+                alert('对比分析失败: ' + error.message);
+            } finally {
+                document.getElementById('compareBtn').disabled = false;
+                document.getElementById('compareBtn').textContent = '🔄 开始对比';
+            }
+        });
         
         // 分析表单提交
         document.getElementById('analyzeForm').addEventListener('submit', async (e) => {

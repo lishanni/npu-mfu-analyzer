@@ -15,6 +15,15 @@ import subprocess
 import hashlib
 
 from src.agents.fusion_rules import FusionOpportunity, ASCEND_FUSED_OPERATORS
+from src.data_loader.aic_metrics import (
+    BOTTLENECK_COMPUTE,
+    BOTTLENECK_MEMORY,
+    BOTTLENECK_PIPELINE,
+    BOTTLENECK_BALANCED,
+    CRITICAL_THRESHOLD,
+    HIGH_THRESHOLD,
+    MEDIUM_THRESHOLD,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +73,22 @@ class AIKGRequest:
     # Triton 提示（如果已有）
     triton_hint: Optional[str] = None   # Triton 实现提示
 
+    # === 硬件指标字段（从 AIC metrics 提取） ===
+    # 算术单元利用率约束
+    cube_utilization: Optional[float] = None  # Cube 利用率 (0-100)
+    vector_utilization: Optional[float] = None  # Vector 利用率 (0-100)
+
+    # 内存约束
+    l2_cache_hit_rate: Optional[float] = None  # L2 缓存命中率 (0-100)
+    ub_usage_limit: Optional[float] = None  # UB 使用率上限 (0-100)
+
+    # 流水线约束
+    pipeline_utilization: Optional[float] = None  # 流水线利用率 (0-100)
+    stall_rate_target: Optional[float] = None  # 目标停顿率 (0-100)
+
+    # 瓶颈类型
+    bottleneck_type: Optional[str] = None  # "compute", "memory", "pipeline", "balanced"
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式（用于序列化）"""
         return {
@@ -80,6 +105,14 @@ class AIKGRequest:
             "complexity": self.complexity,
             "estimated_memory_saving": self.estimated_memory_saving,
             "triton_hint": self.triton_hint,
+            # 硬件指标字段
+            "cube_utilization": self.cube_utilization,
+            "vector_utilization": self.vector_utilization,
+            "l2_cache_hit_rate": self.l2_cache_hit_rate,
+            "ub_usage_limit": self.ub_usage_limit,
+            "pipeline_utilization": self.pipeline_utilization,
+            "stall_rate_target": self.stall_rate_target,
+            "bottleneck_type": self.bottleneck_type,
         }
 
     def to_aikg_prompt(self) -> str:
@@ -123,6 +156,51 @@ class AIKGRequest:
             f"- Estimated Memory Saving: {self.estimated_memory_saving*100:.0f}%",
             f"- Implementation Complexity: {self.complexity}",
             f"",
+        ])
+
+        # === 硬件约束部分（新增） ===
+        if any([self.cube_utilization is not None,
+                self.l2_cache_hit_rate is not None,
+                self.pipeline_utilization is not None]):
+
+            prompt_parts.extend([
+                f"## Hardware Constraints (Based on Profiling Data)",
+                f"",
+            ])
+
+            if self.cube_utilization is not None:
+                prompt_parts.extend([
+                    f"### Compute Constraints",
+                    f"- Current Cube Utilization: {self.cube_utilization:.1f}%",
+                    f"- Goal: Improve computation density and parallelism",
+                    f"",
+                ])
+
+            if self.l2_cache_hit_rate is not None:
+                prompt_parts.extend([
+                    f"### Memory Constraints",
+                    f"- Current L2 Cache Hit Rate: {self.l2_cache_hit_rate:.1f}%",
+                    f"- Goal: Optimize data access pattern for better cache locality",
+                    f"",
+                ])
+
+            if self.pipeline_utilization is not None:
+                prompt_parts.extend([
+                    f"### Pipeline Constraints",
+                    f"- Current Pipeline Utilization: {self.pipeline_utilization:.1f}%",
+                    f"- Goal: Improve instruction scheduling and reduce stalls",
+                    f"",
+                ])
+
+            if self.bottleneck_type:
+                prompt_parts.extend([
+                    f"### Optimization Priority",
+                    f"- Primary Bottleneck: **{self.bottleneck_type.upper()}**",
+                    f"- Optimization should focus on addressing {self.bottleneck_type} constraints",
+                    f"",
+                ])
+
+        prompt_parts.extend([
             f"## Requirements",
             f"1. Generate optimized Triton code for {self.target_backend.value} backend",
             f"2. Include type hints and comprehensive comments",
@@ -404,6 +482,142 @@ class AIKGRequestConverter:
         """构建算子模式描述"""
         # 简化：用 -> 连接算子
         return " -> ".join(operator_names)
+
+    # ========== AIC Metrics 支持方法 ==========
+
+    def convert_opportunities_with_aic_metrics(
+        self,
+        opportunities: List[FusionOpportunity],
+        aic_metrics_dict: Dict[str, Any]
+    ) -> List["AIKGRequest"]:
+        """
+        将融合机会转换为 AIKG 请求（包含 AIC metrics 硬件约束）
+
+        Args:
+            opportunities: 融合机会列表
+            aic_metrics_dict: AIC 指标字典 (op_name -> AICMetrics)
+
+        Returns:
+            AIKG 请求列表（包含硬件约束）
+        """
+        requests = []
+
+        for opp in opportunities:
+            request = self._convert_single_with_aic(opp, aic_metrics_dict)
+            if request:
+                requests.append(request)
+
+        logger.info(
+            f"Converted {len(requests)} AIKG requests with AIC metrics "
+            f"from {len(opportunities)} opportunities"
+        )
+        return requests
+
+    def _convert_single_with_aic(
+        self,
+        opportunity: FusionOpportunity,
+        aic_metrics_dict: Dict[str, Any]
+    ) -> Optional["AIKGRequest"]:
+        """转换单个融合机会（包含 AIC metrics）"""
+        # 1. 检查是否应该跳过
+        if self._should_skip(opportunity):
+            return None
+
+        # 2. 生成基础请求
+        base_request = self._convert_single(opportunity)
+        if not base_request:
+            return None
+
+        # 3. 提取 AIC metrics 硬件约束
+        aic_constraints = self._extract_aic_constraints(
+            opportunity, aic_metrics_dict
+        )
+
+        # 4. 更新请求对象
+        base_request.cube_utilization = aic_constraints.get("cube_utilization")
+        base_request.vector_utilization = aic_constraints.get("vector_utilization")
+        base_request.l2_cache_hit_rate = aic_constraints.get("l2_cache_hit_rate")
+        base_request.ub_usage_limit = aic_constraints.get("ub_usage_limit")
+        base_request.pipeline_utilization = aic_constraints.get("pipeline_utilization")
+        base_request.stall_rate_target = aic_constraints.get("stall_rate_target")
+        base_request.bottleneck_type = aic_constraints.get("bottleneck_type")
+
+        return base_request
+
+    def _extract_aic_constraints(
+        self,
+        opportunity: FusionOpportunity,
+        aic_metrics_dict: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        从融合机会中提取 AIC metrics 硬件约束
+
+        Args:
+            opportunity: 融合机会
+            aic_metrics_dict: AIC 指标字典
+
+        Returns:
+            硬件约束字典
+        """
+        constraints = {}
+
+        # 遍历涉及的所有算子，提取最差的指标作为约束
+        cube_utils = []
+        l2_hit_rates = []
+        pipe_utils = []
+
+        for op in opportunity.current_ops:
+            op_name = op.get("name", "")
+
+            # 查找匹配的 AIC metrics
+            metrics = None
+            if op_name in aic_metrics_dict:
+                metrics = aic_metrics_dict[op_name]
+            else:
+                # 尝试模糊匹配
+                for key, m in aic_metrics_dict.items():
+                    if op_name in key or key in op_name:
+                        metrics = m
+                        break
+
+            if not metrics:
+                continue
+
+            # 提取指标
+            if hasattr(metrics, 'arithmetic') and metrics.arithmetic:
+                cube_utils.append(metrics.arithmetic.cube_utilization)
+
+            if hasattr(metrics, 'memory') and metrics.memory:
+                l2_hit_rates.append(metrics.memory.l2_cache_hit_rate)
+
+            if hasattr(metrics, 'pipeline') and metrics.pipeline:
+                pipe_utils.append(metrics.pipeline.pipe_utilization)
+
+        # 计算约束值（使用最差值）
+        if cube_utils:
+            constraints["cube_utilization"] = min(cube_utils)
+
+        if l2_hit_rates:
+            constraints["l2_cache_hit_rate"] = min(l2_hit_rates)
+
+        if pipe_utils:
+            constraints["pipeline_utilization"] = min(pipe_utils)
+
+        # 判断瓶颈类型
+        if cube_utils and l2_hit_rates:
+            avg_cube = sum(cube_utils) / len(cube_utils)
+            avg_l2 = sum(l2_hit_rates) / len(l2_hit_rates)
+
+            if avg_cube < CRITICAL_THRESHOLD if "CRITICAL_THRESHOLD" in globals() else avg_cube < 40:
+                constraints["bottleneck_type"] = BOTTLENECK_COMPUTE if "BOTTLENECK_COMPUTE" in globals() else "compute"
+            elif avg_l2 < HIGH_THRESHOLD if "HIGH_THRESHOLD" in globals() else avg_l2 < 60:
+                constraints["bottleneck_type"] = BOTTLENECK_MEMORY if "BOTTLENECK_MEMORY" in globals() else "memory"
+            elif pipe_utils and sum(pipe_utils) / len(pipe_utils) < MEDIUM_THRESHOLD if "MEDIUM_THRESHOLD" in globals() else 60:
+                constraints["bottleneck_type"] = BOTTLENECK_PIPELINE if "BOTTLENECK_PIPELINE" in globals() else "pipeline"
+            else:
+                constraints["bottleneck_type"] = BOTTLENECK_BALANCED if "BOTTLENECK_BALANCED" in globals() else "balanced"
+
+        return constraints
 
 
 class AIKGKernelClient:
