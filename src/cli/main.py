@@ -11,7 +11,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
 
 import click
