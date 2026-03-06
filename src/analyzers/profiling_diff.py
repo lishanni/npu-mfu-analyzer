@@ -454,9 +454,10 @@ class ProfilingDiffEngine:
         td = TimelineDiff()
 
         # 从 sample_steps 计算稳定性
+        # 根据 msprof 的计算逻辑：step_time = Computing + Communication(Not Overlapped) + Free
         if summary_a.sample_steps and summary_b.sample_steps:
-            times_a = [s.computing + s.communication + s.free for s in summary_a.sample_steps]
-            times_b = [s.computing + s.communication + s.free for s in summary_b.sample_steps]
+            times_a = [s.computing + s.comm_not_overlapped + s.free for s in summary_a.sample_steps]
+            times_b = [s.computing + s.comm_not_overlapped + s.free for s in summary_b.sample_steps]
 
             if times_a and times_b:
                 import statistics
