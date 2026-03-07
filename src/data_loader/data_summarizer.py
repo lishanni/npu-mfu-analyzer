@@ -165,10 +165,21 @@ class DataSummarizer:
             summary.avg_free_time = step_trace.get("free", [0]).mean()
             
             # 计算 step 时间（避免链式赋值，兼容 pandas 3.0 Copy-on-Write）
-            if "computing" in step_trace.columns and "communication" in step_trace.columns:
+            # 根据 msprof 的计算逻辑：step_time = Computing + Communication(Not Overlapped) + Free
+            # 不能使用 Communication（总通信时间），因为会重复计算重叠的通信时间
+            if "computing" in step_trace.columns:
                 free_col = step_trace["free"] if "free" in step_trace.columns else 0
+                # 优先使用 Communication(Not Overlapped) 字段，避免重复计算重叠时间
+                if "communication_not_overlapped" in step_trace.columns:
+                    comm_col = step_trace["communication_not_overlapped"]
+                elif "communication" in step_trace.columns:
+                    # 向后兼容：如果没有非重叠通信时间字段，则使用总通信时间
+                    # 但这可能导致 step_time 偏大（重复计算了重叠时间）
+                    comm_col = step_trace["communication"]
+                else:
+                    comm_col = 0
                 step_trace = step_trace.assign(
-                    step_time=step_trace["computing"] + step_trace["communication"] + free_col
+                    step_time=step_trace["computing"] + comm_col + free_col
                 )
                 summary.avg_step_time = step_trace["step_time"].mean()
             
