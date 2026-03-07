@@ -71,6 +71,8 @@ from src.analyzers.profiling_diff import (
     CommDiff,
     MemoryDiff,
     MetricChange,
+    SourceChange,
+    RootCauseFinding,
 )
 
 from src.analyzers.comparison_orchestrator import (
@@ -97,14 +99,57 @@ from src.analyzers.link_performance_dashboard import (
 
 from src.analyzers.aic import (
     InstructionAnalyzer,
-    InstructionBottleneck,
     MemoryHierarchyAnalyzer,
-    MemoryHierarchyAnalysis,
     PipelineAnalyzer,
-    PipelineAnalysis,
     PMUDataParser,
     MicroarchReportGenerator,
-    generate_microarch_report,
+)
+
+# 尝试导入可能不存在的类
+try:
+    from src.analyzers.aic.instruction_analyzer import InstructionBottleneck
+except ImportError:
+    InstructionBottleneck = None
+
+try:
+    from src.analyzers.aic.memory_hierarchy_analyzer import MemoryHierarchyAnalysis
+except ImportError:
+    MemoryHierarchyAnalysis = None
+
+try:
+    from src.analyzers.aic.pipeline_analyzer import PipelineAnalysis
+except ImportError:
+    PipelineAnalysis = None
+
+try:
+    from src.analyzers.aic.microarch_report import generate_microarch_report
+except ImportError:
+    generate_microarch_report = None
+
+from src.analyzers.host_device_correlator import (
+    HostDeviceCorrelator,
+    HostEvent,
+    DeviceEvent,
+    correlate_host_device,
+    analyze_from_trace_file,
+    build_call_chains_from_file,
+)
+
+from src.analyzers.operator_source_classifier import (
+    OperatorSourceClassifier,
+    ClassificationResult,
+    SourceChange,
+    StackPatternDiscovery,
+    classify_operators,
+    discover_new_patterns,
+    EXTENDED_STACK_PATTERNS,
+)
+
+from src.analyzers.root_cause_engine import (
+    RootCauseSkillEngine,
+    RootCauseRule,
+    RootCauseFinding,
+    analyze_root_causes,
 )
 
 __all__ = [
@@ -161,6 +206,8 @@ __all__ = [
     "CommDiff",
     "MemoryDiff",
     "MetricChange",
+    "SourceChange",
+    "RootCauseFinding",
     # Comparison Orchestrator
     "ComparisonOrchestrator",
     "ComparisonReport",
@@ -187,4 +234,23 @@ __all__ = [
     "PMUDataParser",
     "MicroarchReportGenerator",
     "generate_microarch_report",
+    # Host-Device Correlation
+    "HostDeviceCorrelator",
+    "HostEvent",
+    "DeviceEvent",
+    "correlate_host_device",
+    "analyze_from_trace_file",
+    # Operator Source Classifier
+    "OperatorSourceClassifier",
+    "ClassificationResult",
+    "SourceChange",
+    "StackPatternDiscovery",
+    "classify_operators",
+    "discover_new_patterns",
+    "EXTENDED_STACK_PATTERNS",
+    # Root Cause Engine
+    "RootCauseSkillEngine",
+    "RootCauseRule",
+    "RootCauseFinding",
+    "analyze_root_causes",
 ]

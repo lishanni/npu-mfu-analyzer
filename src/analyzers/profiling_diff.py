@@ -7,14 +7,18 @@ Profiling 多层级差异分析引擎
 3. Operator 级 - 算子性能对比
 4. Communication 级 - 通信模式对比
 5. Memory 级 - 内存使用对比
+
+增强版：集成 Host-Device 关联分析和根因推理。
 """
 
 import logging
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field
 
 from src.data_loader.profiling_loader import ProfilingLoader, ProfilingInfo
 from src.data_loader.data_summarizer import DataSummarizer, ProfilingSummary
+from src.data_loader.stack_types import HostDeviceChain, SourceAnalysisResult
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +190,73 @@ class MemoryDiff:
 
 
 @dataclass
+class SourceChange:
+    """算子来源变化"""
+    operator_name: str
+    source_a: str              # 版本 A 的来源
+    source_b: str              # 版本 B 的来源
+    is_change: bool            # 是否有变化
+    change_type: str           # "mode_switch", "new", "removed", "unchanged"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "operator_name": self.operator_name,
+            "source_a": self.source_a,
+            "source_b": self.source_b,
+            "is_change": self.is_change,
+            "change_type": self.change_type,
+        }
+
+
+@dataclass
+class RootCauseFinding:
+    """根因发现"""
+    rule_name: str
+    root_cause: str
+    evidence: List[str] = field(default_factory=list)
+    affected_operators: List[str] = field(default_factory=list)
+    optimization_suggestions: List[str] = field(default_factory=list)
+    impact: str = "medium"       # "high" / "medium" / "low"
+    priority: str = "P1"         # "P0" / "P1" / "P2"
+    confidence: float = 0.5
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "rule_name": self.rule_name,
+            "root_cause": self.root_cause,
+            "evidence": self.evidence,
+            "affected_operators": self.affected_operators,
+            "optimization_suggestions": self.optimization_suggestions,
+            "impact": self.impact,
+            "priority": self.priority,
+            "confidence": self.confidence,
+        }
+
+    def to_markdown(self) -> str:
+        """转换为 Markdown 格式"""
+        lines = [
+            f"### [{self.priority}] {self.rule_name}",
+            "",
+            f"**根因**: {self.root_cause}",
+            "",
+            "**证据**:",
+        ]
+        for e in self.evidence:
+            lines.append(f"- {e}")
+
+        if self.affected_operators:
+            lines.append("")
+            lines.append(f"**受影响算子**: {', '.join(self.affected_operators[:10])}")
+
+        lines.append("")
+        lines.append("**建议**:")
+        for s in self.optimization_suggestions[:5]:
+            lines.append(f"- {s}")
+
+        return "\n".join(lines)
+
+
+@dataclass
 class ProfilingDiff:
     """完整的 Profiling 差异结果"""
     summary_diff: SummaryDiff = field(default_factory=SummaryDiff)
@@ -197,6 +268,18 @@ class ProfilingDiff:
     # 全局判断
     overall_verdict: str = ""      # improved / degraded / mixed / unchanged
     primary_changes: List[str] = field(default_factory=list)  # 主要变化描述
+
+    # 新增：算子来源分析
+    source_changes: List[SourceChange] = field(default_factory=list)  # 算子来源变化
+    source_stats_a: Optional[Dict[str, int]] = None  # 版本 A 来源统计
+    source_stats_b: Optional[Dict[str, int]] = None  # 版本 B 来源统计
+
+    # 新增：根因分析
+    root_cause_findings: List[RootCauseFinding] = field(default_factory=list)  # 根因发现
+
+    # 新增：Host-Device 调用链
+    chains_a: List[HostDeviceChain] = field(default_factory=list)
+    chains_b: List[HostDeviceChain] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         result = {
@@ -212,6 +295,16 @@ class ProfilingDiff:
             result["comm_diff"] = self.comm_diff.to_dict()
         if self.memory_diff:
             result["memory_diff"] = self.memory_diff.to_dict()
+        # 新增：来源变化
+        if self.source_changes:
+            result["source_changes"] = [sc.to_dict() for sc in self.source_changes]
+        if self.source_stats_a:
+            result["source_stats_a"] = self.source_stats_a
+        if self.source_stats_b:
+            result["source_stats_b"] = self.source_stats_b
+        # 新增：根因分析
+        if self.root_cause_findings:
+            result["root_cause_findings"] = [f.to_dict() for f in self.root_cause_findings]
         return result
 
     def to_prompt_text(self) -> str:
@@ -296,6 +389,23 @@ class ProfilingDiff:
                 lines.append(f"- {pattern}")
             lines.append("")
 
+        # 6. 算子来源分析（新增）
+        if self.source_changes:
+            lines.append("### 算子来源变化")
+            mode_switches = [sc for sc in self.source_changes if sc.change_type == "mode_switch"]
+            if mode_switches:
+                lines.append(f"**模式切换**: {len(mode_switches)} 个算子")
+                for sc in mode_switches[:5]:
+                    lines.append(f"- {sc.operator_name}: {sc.source_a} → {sc.source_b}")
+            lines.append("")
+
+        # 7. 根因分析（新增）
+        if self.root_cause_findings:
+            lines.append("### 根因分析")
+            for finding in self.root_cause_findings:
+                lines.append(finding.to_markdown())
+                lines.append("")
+
         return "\n".join(lines)
 
 
@@ -330,6 +440,8 @@ class ProfilingDiffEngine:
         loader_b: Optional[ProfilingLoader] = None,
         operators_a: Optional[List[Dict[str, Any]]] = None,
         operators_b: Optional[List[Dict[str, Any]]] = None,
+        enable_host_device_correlation: bool = True,
+        enable_root_cause_analysis: bool = True,
     ) -> ProfilingDiff:
         """
         计算两个 Profiling 的完整差异
@@ -341,6 +453,8 @@ class ProfilingDiffEngine:
             loader_b: Profiling B 的数据加载器（可选，用于深度分析）
             operators_a: Profiling A 的算子列表（可选）
             operators_b: Profiling B 的算子列表（可选）
+            enable_host_device_correlation: 是否启用 Host-Device 关联分析
+            enable_root_cause_analysis: 是否启用根因推理
 
         Returns:
             ProfilingDiff
@@ -350,19 +464,43 @@ class ProfilingDiffEngine:
         # Level 1: Summary Diff (always)
         diff.summary_diff = self._compute_summary_diff(summary_a, summary_b)
 
+        logger.info(f"Summary diff: {diff.summary_diff.improvement_count} improvements, {diff.summary_diff.regression_count} regressions")
+
         # Level 2: Timeline Diff
         diff.timeline_diff = self._compute_timeline_diff(summary_a, summary_b, loader_a, loader_b)
+        logger.info(f"Timeline diff computed")
 
         # Level 3: Operator Diff
         diff.operator_diff = self._compute_operator_diff(summary_a, summary_b, operators_a, operators_b)
+        logger.info(f"Operator diff: {diff.operator_diff.total_operator_count_a} vs {diff.operator_diff.total_operator_count_b} operators")
 
         # Level 4: Communication Diff
         diff.comm_diff = self._compute_comm_diff(summary_a, summary_b, loader_a, loader_b)
+        logger.info(f"Communication diff computed")
 
         # Level 5: Memory Diff
         diff.memory_diff = self._compute_memory_diff(loader_a, loader_b)
+        logger.info(f"Memory diff computed")
 
-        # 全局判断
+        # Level 6: Host-Device Correlation Analysis (New!)
+        if enable_host_device_correlation:
+            diff.chains_a, diff.chains_b, diff.source_changes = self._compute_host_device_correlation(
+                loader_a, loader_b
+            )
+            if diff.source_changes:
+                logger.info(f"Source changes detected: {len(diff.source_changes)} operators with source changes")
+            if diff.chains_a or diff.chains_b:
+                logger.info(f"Host-Device chains: A={len(diff.chains_a)}, B={len(diff.chains_b)}")
+
+        # Level 7: Root Cause Analysis (New!)
+        if enable_root_cause_analysis and diff.chains_a and diff.chains_b:
+            diff.root_cause_findings = self._compute_root_cause_analysis(
+                diff.chains_a, diff.chains_b, diff
+            )
+            if diff.root_cause_findings:
+                logger.info(f"Root cause findings: {len(diff.root_cause_findings)} issues detected")
+
+        # Global verdict
         diff.overall_verdict = self._determine_verdict(diff)
         diff.primary_changes = self._extract_primary_changes(diff)
 
@@ -755,3 +893,81 @@ class ProfilingDiffEngine:
             )
 
         return changes[:5]
+
+    def _compute_host_device_correlation(
+        self,
+        loader_a: Optional[ProfilingLoader],
+        loader_b: Optional[ProfilingLoader],
+    ) -> Tuple[List[HostDeviceChain], List[HostDeviceChain], List[SourceChange]]:
+        """
+        计算 Host-Device 关联分析
+
+        Returns:
+            (chains_a, chains_b, source_changes)
+        """
+        from src.analyzers.host_device_correlator import (
+            HostDeviceCorrelator,
+            analyze_from_trace_file,
+            build_call_chains_from_file,
+        )
+        from src.analyzers.operator_source_classifier import OperatorSourceClassifier
+
+        chains_a = []
+        chains_b = []
+        source_changes = []
+
+        try:
+            classifier = OperatorSourceClassifier()
+            correlator = HostDeviceCorrelator()
+
+            # 分析版本 A
+            if loader_a:
+                trace_files_a = list(Path(loader_a.profiling_path).rglob("trace_view.json"))
+                if trace_files_a:
+                    chains_a = build_call_chains_from_file(str(trace_files_a[0]))
+
+            # 分析版本 B
+            if loader_b:
+                trace_files_b = list(Path(loader_b.profiling_path).rglob("trace_view.json"))
+                if trace_files_b:
+                    chains_b = build_call_chains_from_file(str(trace_files_b[0]))
+
+            # 计算来源变化
+            if chains_a or chains_b:
+                source_changes = classifier.compute_source_changes(chains_a, chains_b)
+
+        except Exception as e:
+            logger.warning(f"Host-Device correlation analysis failed: {e}")
+
+        return chains_a, chains_b, source_changes
+
+    def _compute_root_cause_analysis(
+        self,
+        chains_a: List[HostDeviceChain],
+        chains_b: List[HostDeviceChain],
+        diff: ProfilingDiff,
+    ) -> List[RootCauseFinding]:
+        """
+        执行根因推理
+
+        Args:
+            chains_a: 版本 A 的调用链
+            chains_b: 版本 B 的调用链
+            diff: ProfilingDiff 对象
+
+        Returns:
+            RootCauseFinding 列表
+        """
+        from src.analyzers.root_cause_engine import RootCauseSkillEngine
+
+        findings = []
+
+        try:
+            engine = RootCauseSkillEngine()
+            findings = engine.analyze(chains_a, chains_b, diff)
+
+        except Exception as e:
+            logger.warning(f"Root cause analysis failed: {e}")
+
+        return findings
+

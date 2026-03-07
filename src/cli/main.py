@@ -94,6 +94,11 @@ def cli():
     default=None,
     help="AIC 微架构报告输出路径"
 )
+@click.option(
+    "--host-device-correlation/--no-host-device-correlation",
+    default=True,
+    help="启用 Host-Device 关联分析 (默认: 启用)"
+)
 def analyze(
     profiling_path: str,
     output: Optional[str],
@@ -107,6 +112,7 @@ def analyze(
     dashboard_output: Optional[str],
     aic_microarch: bool,
     aic_report_output: Optional[str],
+    host_device_correlation: bool,
 ):
     """
     分析 Profiling 数据，生成性能报告
@@ -135,7 +141,7 @@ def analyze(
 
     # 运行分析
     try:
-        report = asyncio.run(_run_analysis(profiling_path, backend, model, comm_matrix, dashboard, aic_microarch))
+        report = asyncio.run(_run_analysis(profiling_path, backend, model, comm_matrix, dashboard, aic_microarch, host_device_correlation))
 
         if report.success:
             click.echo(click.style("✅ 分析完成!", fg="green"))
@@ -241,6 +247,7 @@ async def _run_analysis(
     enable_comm_matrix: bool = True,
     enable_dashboard: bool = True,
     enable_aic_microarch: bool = True,
+    enable_host_device_correlation: bool = True,
 ):
     """执行分析"""
     from src.llm.llm_interface import LLMConfig
@@ -258,6 +265,7 @@ async def _run_analysis(
         enable_comm_matrix=enable_comm_matrix,
         enable_dashboard=enable_dashboard,
         enable_aic_microarch=enable_aic_microarch,
+        enable_host_device_correlation=enable_host_device_correlation,
     )
     return await orchestrator.run()
 
