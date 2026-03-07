@@ -785,3 +785,95 @@ class PipelineBottleneckType(Enum):
     RESOURCE_CONFLICT = "resource_conflict" # 资源冲突
     MEMORY_STALL = "memory_stall"           # 内存停顿
     SYNC_STALL = "sync_stall"               # 同步停顿
+
+
+# ============================================================================
+# PMU 数据加载函数
+# ============================================================================
+
+def load_aic_pmu_from_profiling(
+    profiling_path: str,
+    limit: int = 100,
+) -> List[ExtendedAICMetrics]:
+    """
+    从 profiling 数据加载 AIC PMU 指标
+
+    Args:
+        profiling_path: Profiling 数据目录路径
+        limit: 最大加载数量
+
+    Returns:
+        ExtendedAICMetrics 列表
+    """
+    from src.analyzers.aic.pmu_data_parser import PMUDataParser
+
+    parser = PMUDataParser(profiling_path)
+    return parser.load_operator_pmu_list(limit=limit)
+
+
+def analyze_aic_microarchitecture(
+    profiling_path: str,
+    output_html: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    执行 AIC 微架构深度分析
+
+    Args:
+        profiling_path: Profiling 数据目录路径
+        output_html: HTML 报告输出路径（可选）
+
+    Returns:
+        分析结果字典
+    """
+    from src.analyzers.aic.instruction_analyzer import InstructionAnalyzer
+    from src.analyzers.aic.memory_hierarchy_analyzer import MemoryHierarchyAnalyzer
+    from src.analyzers.aic.pipeline_analyzer import PipelineAnalyzer
+    from src.analyzers.aic.pmu_data_parser import PMUDataParser
+
+    # 加载 PMU 数据
+    parser = PMUDataParser(profiling_path)
+    metrics_list = parser.load_operator_pmu_list(limit=100)
+
+    if not metrics_list:
+        return {
+            "success": False,
+            "error": "No AIC PMU data found in profiling data",
+            "analyzed_count": 0,
+        }
+
+    # 执行分析
+    instruction_analyzer = InstructionAnalyzer()
+    memory_analyzer = MemoryHierarchyAnalyzer()
+    pipeline_analyzer = PipelineAnalyzer()
+
+    instruction_bottlenecks, instruction_summary = instruction_analyzer.analyze_batch(metrics_list)
+    memory_analyses, memory_summary = memory_analyzer.analyze_batch(metrics_list)
+    pipeline_analyses, pipeline_summary = pipeline_analyzer.analyze_batch(metrics_list)
+
+    result = {
+        "success": True,
+        "analyzed_count": len(metrics_list),
+        "instruction_analysis": {
+            "summary": instruction_summary,
+            "critical_count": instruction_summary.get("critical_count", 0),
+            "high_count": instruction_summary.get("high_count", 0),
+        },
+        "memory_analysis": {
+            "summary": memory_summary,
+            "avg_l2_hit_rate": memory_summary.get("avg_l2_hit_rate", 0.0),
+            "avg_locality_score": memory_summary.get("avg_locality_score", 0.0),
+        },
+        "pipeline_analysis": {
+            "summary": pipeline_summary,
+            "avg_pipe_util": pipeline_summary.get("avg_pipe_util", 0.0),
+            "avg_stall_rate": pipeline_summary.get("avg_stall_rate", 0.0),
+        },
+    }
+
+    # 生成 HTML 报告
+    if output_html:
+        from src.analyzers.aic.microarch_report import generate_microarch_report
+        generate_microarch_report(profiling_path, metrics_list, output_html)
+        result["report_path"] = output_html
+
+    return result

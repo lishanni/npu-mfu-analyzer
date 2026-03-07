@@ -48,10 +48,20 @@ class ReportData:
     memory_analysis: str = ""
     communication_analysis: str = ""
     jitter_analysis: str = ""
-    
+    deep_operator_analysis: str = ""  # 深度算子分析 V2
+
+    # 通信矩阵分析
+    comm_matrix_summary: str = ""
+    comm_matrix_html_path: str = ""
+    total_comm_data_mb: float = 0.0
+    total_comm_time_ms: float = 0.0
+    avg_comm_bandwidth_gbps: float = 0.0
+    slow_link_count: int = 0
+    bottleneck_link_count: int = 0
+
     # 建议
     suggestions: List[Dict[str, Any]] = None
-    
+
     def __post_init__(self):
         if not self.generated_at:
             self.generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -127,10 +137,15 @@ class MarkdownTemplate:
 ### 2.4 通信分析
 
 {communication_analysis}
+{comm_matrix_section}
 
 ### 2.5 抖动分析
 
 {jitter_analysis}
+
+### 2.6 深度算子分析 (V2)
+
+{deep_operator_analysis}
 
 ---
 
@@ -157,26 +172,31 @@ class MarkdownTemplate:
 | DP | Data Parallel，数据并行 |
 | Overlap | 通信掩盖，通信与计算重叠的比例 |
 | Bubble | PP 中的气泡时间，Stage 等待的空闲时间 |
+| HCCS | High-speed Chip-to-Chip Scalability，节点内高速互联 |
+| RDMA | Remote Direct Memory Access，跨节点通信协议 |
 """
     
     @classmethod
     def render(cls, data: ReportData) -> str:
         """渲染 Markdown 报告"""
-        
+
         # 生成进度条
         def make_bar(pct: float, width: int = 20) -> str:
             filled = int(pct / 100 * width)
             return "█" * filled + "░" * (width - filled)
-        
+
         compute_bar = make_bar(data.compute_ratio * 100)
         comm_bar = make_bar(data.comm_ratio * 100)
         idle_bar = make_bar(data.idle_ratio * 100)
-        
+
         # 生成建议部分
         suggestions_section = cls._render_suggestions(data.suggestions)
 
         # 生成 Roofline 分析部分
         roofline_section = cls._render_roofline(data)
+
+        # 生成通信矩阵部分
+        comm_matrix_section = cls._render_comm_matrix(data)
 
         return cls.TEMPLATE.format(
             title=data.title,
@@ -201,9 +221,37 @@ class MarkdownTemplate:
             operator_analysis=data.operator_analysis or "暂无分析数据",
             memory_analysis=data.memory_analysis or "暂无分析数据",
             communication_analysis=data.communication_analysis or "暂无分析数据",
+            comm_matrix_section=comm_matrix_section,
             jitter_analysis=data.jitter_analysis or "暂无分析数据",
+            deep_operator_analysis=data.deep_operator_analysis or "暂无分析数据",
             suggestions_section=suggestions_section,
         )
+
+    @classmethod
+    def _render_comm_matrix(cls, data: ReportData) -> str:
+        """渲染通信矩阵分析部分"""
+        if not data.total_comm_data_mb and not data.total_comm_time_ms:
+            return ""
+
+        lines = [
+            "",
+            "#### 通信矩阵分析",
+            "",
+            f"- 总通信量: {data.total_comm_data_mb:.2f} MB",
+            f"- 总通信时间: {data.total_comm_time_ms:.2f} ms",
+            f"- 平均带宽: {data.avg_comm_bandwidth_gbps:.2f} GB/s",
+        ]
+
+        if data.slow_link_count > 0:
+            lines.append(f"- ⚠️ 慢链路数: {data.slow_link_count}")
+
+        if data.bottleneck_link_count > 0:
+            lines.append(f"- ⚠️ 瓶颈链路数: {data.bottleneck_link_count}")
+
+        if data.comm_matrix_html_path:
+            lines.append(f"- 详细可视化: [{data.comm_matrix_html_path}]({data.comm_matrix_html_path})")
+
+        return "\n".join(lines)
     
     @classmethod
     def _render_suggestions(cls, suggestions: List[Dict[str, Any]]) -> str:
