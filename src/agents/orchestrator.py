@@ -32,6 +32,7 @@ from src.analyzers.host_device_correlator import (
     build_call_chains_from_file,
 )
 from src.analyzers.operator_source_classifier import OperatorSourceClassifier
+from src.analyzers.root_cause_engine import RootCauseSkillEngine, RootCauseFinding
 from src.data_loader.stack_types import HostDeviceChain
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,8 @@ class AnalysisReport:
     # 新增：算子来源分析
     source_analysis: Optional[SourceAnalysisResult] = None  # 算子来源分析结果
     host_device_chains: List[HostDeviceChain] = field(default_factory=list)  # Host-Device 调用链
+    # 新增：根因分析
+    root_cause_findings: List[RootCauseFinding] = field(default_factory=list)  # 根因发现
 
     def to_markdown(self) -> str:
         """转换为 Markdown 格式"""
@@ -87,6 +90,12 @@ class AnalysisReport:
         if self.source_analysis:
             lines.append("## 算子来源分析")
             lines.append(self._format_source_analysis_summary())
+            lines.append("")
+
+        # 根因分析
+        if self.root_cause_findings:
+            lines.append("## 根因分析")
+            lines.append(self._format_root_cause_findings())
             lines.append("")
 
         if self.recommendations:
@@ -141,6 +150,58 @@ class AnalysisReport:
 
         return "\n".join(lines)
 
+    def _format_root_cause_findings(self) -> str:
+        """格式化根因分析发现"""
+        if not self.root_cause_findings:
+            return ""
+
+        lines = []
+        # 按优先级排序
+        priority_order = {"P0": 0, "P1": 1, "P2": 2}
+        sorted_findings = sorted(
+            self.root_cause_findings,
+            key=lambda f: priority_order.get(f.priority, 3)
+        )
+
+        for i, finding in enumerate(sorted_findings, 1):
+            # 优先级标签
+            priority_label = {
+                "P0": "🔴 [高优先级]",
+                "P1": "🟡 [中优先级]",
+                "P2": "🟢 [低优先级]",
+            }.get(finding.priority, "⚪")
+
+            lines.append(f"### {i}. {priority_label} {finding.rule_name}")
+            lines.append("")
+
+            # 根因描述
+            if finding.root_cause:
+                lines.append(f"**根因**: {finding.root_cause}")
+                lines.append("")
+
+            # 证据
+            if finding.evidence:
+                lines.append("**证据**:")
+                for evidence in finding.evidence:
+                    lines.append(f"  - {evidence}")
+                lines.append("")
+
+            # 受影响算子
+            if finding.affected_operators:
+                lines.append("**受影响算子**: " + ", ".join(finding.affected_operators[:10]))
+                if len(finding.affected_operators) > 10:
+                    lines.append(f"  _...及其他 {len(finding.affected_operators) - 10} 个算子_")
+                lines.append("")
+
+            # 优化建议
+            if finding.optimization_suggestions:
+                lines.append("**优化建议**:")
+                for suggestion in finding.optimization_suggestions:
+                    lines.append(f"  - {suggestion}")
+                lines.append("")
+
+        return "\n".join(lines)
+
 
 class Orchestrator:
     """
@@ -192,6 +253,7 @@ class Orchestrator:
         # Host-Device 关联分析组件
         self.host_device_correlator = HostDeviceCorrelator() if enable_host_device_correlation else None
         self.source_classifier = OperatorSourceClassifier() if enable_host_device_correlation else None
+        self.root_cause_engine = RootCauseSkillEngine() if enable_host_device_correlation else None
 
         # 初始化 Agents
         self.agents: Dict[str, BaseAgent] = {}
@@ -286,10 +348,13 @@ class Orchestrator:
             # 2.8. Host-Device 关联分析
             source_analysis = None
             host_device_chains = []
+            root_cause_findings = []
             if self.enable_host_device_correlation and self.host_device_correlator:
-                source_analysis, host_device_chains = self._analyze_host_device_correlation()
+                source_analysis, host_device_chains, root_cause_findings = self._analyze_host_device_correlation()
                 if source_analysis:
                     logger.info(f"Host-Device correlation analysis complete: {source_analysis.total_chains} chains")
+                if root_cause_findings:
+                    logger.info(f"Root cause analysis found {len(root_cause_findings)} issues")
 
             # 3. 检查是否有 AIC metrics 数据
             has_aic_metrics = self._check_aic_metrics_available()
@@ -347,6 +412,7 @@ class Orchestrator:
                 aic_microarch_html=aic_microarch_html,
                 source_analysis=source_analysis,
                 host_device_chains=host_device_chains,
+                root_cause_findings=root_cause_findings,
             )
             
         except Exception as e:
@@ -723,8 +789,8 @@ class Orchestrator:
             logger.error(f"AIC microarchitecture analysis failed: {e}")
             return None
 
-    def _analyze_host_device_correlation(self) -> Tuple[Optional[SourceAnalysisResult], List[HostDeviceChain]]:
-        """执行 Host-Device 关联分析"""
+    def _analyze_host_device_correlation(self) -> Tuple[Optional[SourceAnalysisResult], List[HostDeviceChain], List[RootCauseFinding]]:
+        """执行 Host-Device 关联分析（包含根因推理）"""
         try:
             from pathlib import Path
 
@@ -739,7 +805,7 @@ class Orchestrator:
 
             if not trace_files:
                 logger.warning("No trace_view.json found for Host-Device correlation analysis")
-                return None, []
+                return None, [], []
 
             # 使用第一个 trace 文件
             trace_path = str(trace_files[0])
@@ -751,12 +817,24 @@ class Orchestrator:
             # 获取调用链
             chains = build_call_chains_from_file(trace_path)
 
-            logger.info(f"Host-Device correlation analysis complete: {result.total_chains} chains")
-            return result, chains
+            # 执行根因推理
+            findings = []
+            if self.root_cause_engine and chains:
+                logger.info("Running single-version root cause analysis...")
+                stats = self.source_classifier.build_stats(chains) if self.source_classifier else None
+                findings = self.root_cause_engine.analyze_single(
+                    chains=chains,
+                    stats=stats,
+                    profiling_summary=self.summarizer.summarize() if hasattr(self, 'summarizer') else None,
+                )
+                logger.info(f"Root cause analysis found {len(findings)} issues")
+
+            logger.info(f"Host-Device correlation analysis complete: {result.total_chains} chains, {len(findings)} findings")
+            return result, chains, findings
 
         except Exception as e:
             logger.error(f"Host-Device correlation analysis failed: {e}")
-            return None, []
+            return None, [], []
 
 
 async def run_analysis(profiling_path: str, llm_backend: str = "openai") -> AnalysisReport:
