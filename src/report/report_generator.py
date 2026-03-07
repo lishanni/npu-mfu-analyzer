@@ -81,6 +81,7 @@ class ReportGenerator:
         advisor_report: Optional[Any] = None,
         mfu_metrics: Any = None,
         roofline_analysis: Any = None,
+        communication_matrix: Any = None,
         format: Optional[ReportFormat] = None,
     ) -> str:
         """
@@ -93,6 +94,7 @@ class ReportGenerator:
             advisor_report: AdvisorReport 对象（可选）
             mfu_metrics: MFUMetrics 对象（可选）
             roofline_analysis: Roofline 分析结果（可选）
+            communication_matrix: CommunicationMatrix 对象（可选）
             format: 报告格式
 
         Returns:
@@ -211,6 +213,12 @@ class ReportGenerator:
             communication_analysis=communication_analysis if communication_analysis else "",
             jitter_analysis=jitter_analysis if jitter_analysis else "",
             suggestions=suggestions,
+            # 通信矩阵数据
+            total_comm_data_mb=communication_matrix.total_comm_data_mb if communication_matrix else 0.0,
+            total_comm_time_ms=communication_matrix.total_comm_time_ms if communication_matrix else 0.0,
+            avg_comm_bandwidth_gbps=communication_matrix.avg_bandwidth_gbps if communication_matrix else 0.0,
+            slow_link_count=len(communication_matrix.slow_links) if communication_matrix else 0,
+            bottleneck_link_count=len(communication_matrix.bottleneck_links) if communication_matrix else 0,
         )
         
         return self.generate(report_data, format)
