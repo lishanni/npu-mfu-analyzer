@@ -95,6 +95,18 @@ from src.analyzers.link_performance_dashboard import (
     generate_dashboard,
 )
 
+from src.analyzers.aic import (
+    InstructionAnalyzer,
+    InstructionBottleneck,
+    MemoryHierarchyAnalyzer,
+    MemoryHierarchyAnalysis,
+    PipelineAnalyzer,
+    PipelineAnalysis,
+    PMUDataParser,
+    MicroarchReportGenerator,
+    generate_microarch_report,
+)
+
 __all__ = [
     # Overlap
     "TimeRange",
@@ -165,4 +177,14 @@ __all__ = [
     "LinkPerformanceDashboard",
     "DashboardData",
     "generate_dashboard",
+    # AIC Microarchitecture
+    "InstructionAnalyzer",
+    "InstructionBottleneck",
+    "MemoryHierarchyAnalyzer",
+    "MemoryHierarchyAnalysis",
+    "PipelineAnalyzer",
+    "PipelineAnalysis",
+    "PMUDataParser",
+    "MicroarchReportGenerator",
+    "generate_microarch_report",
 ]

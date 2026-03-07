@@ -24,6 +24,7 @@ from src.data_loader.profiling_loader import ProfilingLoader
 from src.data_loader.data_summarizer import DataSummarizer, ProfilingSummary
 from src.report.report_generator import ReportGenerator, ReportFormat
 from src.analyzers.communication_matrix_analyzer import CommunicationMatrixAnalyzer, CommunicationMatrix
+from src.agents.aic_microarch_agent import AICMicroarchAgent
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,8 @@ class AnalysisReport:
     communication_matrix: Optional[CommunicationMatrix] = None  # 通信矩阵分析结果
     comm_matrix_html: Optional[str] = None  # 通信矩阵可视化 HTML
     dashboard_html: Optional[str] = None  # 链路性能仪表板 HTML
+    aic_microarch_html: Optional[str] = None  # AIC 微架构报告 HTML
+    aic_microarch_html: Optional[str] = None  # AIC 微架构报告 HTML
 
     def to_markdown(self) -> str:
         """转换为 Markdown 格式"""
@@ -118,6 +121,7 @@ class Orchestrator:
         config: Optional[Dict[str, Any]] = None,
         enable_comm_matrix: bool = True,
         enable_dashboard: bool = True,
+        enable_aic_microarch: bool = True,
         enable_deep_operator_analysis: bool = True,
     ):
         """
@@ -127,6 +131,7 @@ class Orchestrator:
             config: 额外配置
             enable_comm_matrix: 是否启用通信矩阵分析
             enable_dashboard: 是否启用链路性能仪表板
+            enable_aic_microarch: 是否启用 AIC 微架构分析
             enable_deep_operator_analysis: 是否启用深度算子分析 V2
         """
         self.profiling_path = profiling_path
@@ -134,6 +139,7 @@ class Orchestrator:
         self.config = config or {}
         self.enable_comm_matrix = enable_comm_matrix
         self.enable_dashboard = enable_dashboard
+        self.enable_aic_microarch = enable_aic_microarch
         self.enable_deep_operator_analysis = enable_deep_operator_analysis
 
         # 初始化组件
@@ -162,6 +168,10 @@ class Orchestrator:
             if self.enable_deep_operator_analysis:
                 self.agents["detailed_operator_v2"] = DetailedOperatorAgentV2(self.llm, self.config)
                 logger.info("DetailedOperatorAgentV2 enabled (deep analysis)")
+
+            # AIC 微架构分析 Agent（需要 PMU 数据）
+            self.agents["aic_microarch"] = AICMicroarchAgent(self.llm, self.config)
+            logger.info("AICMicroarchAgent enabled (microarchitecture analysis)")
 
         # Advisor Agent 单独保存，用于最终综合分析
         self.advisor = AdvisorAgent(self.llm, self.config)
@@ -220,6 +230,13 @@ class Orchestrator:
                         dashboard_html = generate_dashboard(comm_matrix)
                         logger.info("Link performance dashboard generated")
 
+            # 2.7. AIC 微架构分析
+            aic_microarch_html = None
+            if self.enable_aic_microarch:
+                aic_microarch_html = self._analyze_aic_microarchitecture()
+                if aic_microarch_html:
+                    logger.info("AIC microarchitecture report generated")
+
             # 3. 检查是否有 AIC metrics 数据
             has_aic_metrics = self._check_aic_metrics_available()
 
@@ -273,6 +290,7 @@ class Orchestrator:
                 communication_matrix=comm_matrix,
                 comm_matrix_html=comm_matrix_html,
                 dashboard_html=dashboard_html,
+                aic_microarch_html=aic_microarch_html,
             )
             
         except Exception as e:
@@ -612,6 +630,41 @@ class Orchestrator:
 
         except Exception as e:
             logger.error(f"Communication matrix analysis failed: {e}")
+            return None
+
+    def _analyze_aic_microarchitecture(self) -> Optional[str]:
+        """执行 AIC 微架构分析"""
+        try:
+            from src.data_loader.aic_metrics import analyze_aic_microarchitecture
+
+            logger.info("Starting AIC microarchitecture analysis")
+
+            # 执行分析
+            result = analyze_aic_microarchitecture(
+                profiling_path=self.profiling_path,
+                output_html=None,  # 先生成数据，HTML 在后面生成
+            )
+
+            if not result.get("success"):
+                logger.warning(f"AIC microarchitecture analysis failed: {result.get('error')}")
+                return None
+
+            # 生成 HTML 报告
+            from src.analyzers.aic.microarch_report import generate_microarch_report
+            from src.data_loader.aic_metrics import load_aic_pmu_from_profiling
+
+            metrics_list = load_aic_pmu_from_profiling(self.profiling_path, limit=100)
+            html_content = generate_microarch_report(
+                self.profiling_path,
+                metrics_list,
+                output_path=None,  # 返回 HTML 内容
+            )
+
+            logger.info(f"AIC microarchitecture analysis complete: {result.get('analyzed_count', 0)} operators")
+            return html_content
+
+        except Exception as e:
+            logger.error(f"AIC microarchitecture analysis failed: {e}")
             return None
 
 
