@@ -79,6 +79,22 @@ from src.analyzers.comparison_orchestrator import (
     run_comparison,
 )
 
+from src.analyzers.communication_matrix_analyzer import (
+    CommunicationMatrixAnalyzer,
+    CommunicationMatrix,
+    LinkMetrics,
+    TransportType,
+    CommOpType,
+    CommOpStatistics,
+    CommunicationMatrixReport,
+)
+
+from src.analyzers.link_performance_dashboard import (
+    LinkPerformanceDashboard,
+    DashboardData,
+    generate_dashboard,
+)
+
 __all__ = [
     # Overlap
     "TimeRange",
@@ -137,4 +153,16 @@ __all__ = [
     "ComparisonOrchestrator",
     "ComparisonReport",
     "run_comparison",
+    # Communication Matrix
+    "CommunicationMatrixAnalyzer",
+    "CommunicationMatrix",
+    "LinkMetrics",
+    "TransportType",
+    "CommOpType",
+    "CommOpStatistics",
+    "CommunicationMatrixReport",
+    # Dashboard
+    "LinkPerformanceDashboard",
+    "DashboardData",
+    "generate_dashboard",
 ]

@@ -72,6 +72,17 @@ def cli():
     default=None,
     help="通信矩阵可视化 HTML 输出路径 (单独文件)"
 )
+@click.option(
+    "--dashboard/--no-dashboard",
+    default=True,
+    help="生成链路性能仪表板 (默认: 启用)"
+)
+@click.option(
+    "--dashboard-output",
+    type=str,
+    default=None,
+    help="仪表板输出路径"
+)
 def analyze(
     profiling_path: str,
     output: Optional[str],
@@ -81,6 +92,8 @@ def analyze(
     verbose: bool,
     comm_matrix: bool,
     comm_matrix_output: Optional[str],
+    dashboard: bool,
+    dashboard_output: Optional[str],
 ):
     """
     分析 Profiling 数据，生成性能报告
@@ -93,6 +106,7 @@ def analyze(
         npu-analyzer analyze /path/to/profiling -o report.md -f markdown
         npu-analyzer analyze /path/to/profiling -o report.html -f html
         npu-analyzer analyze /path/to/profiling --comm-matrix --comm-matrix-output comm.html
+        npu-analyzer analyze /path/to/profiling --dashboard --dashboard-output dashboard.html
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -107,7 +121,7 @@ def analyze(
 
     # 运行分析
     try:
-        report = asyncio.run(_run_analysis(profiling_path, backend, model, comm_matrix))
+        report = asyncio.run(_run_analysis(profiling_path, backend, model, comm_matrix, dashboard))
 
         if report.success:
             click.echo(click.style("✅ 分析完成!", fg="green"))
@@ -168,6 +182,19 @@ def analyze(
                     default_path = Path(f"communication_matrix_{timestamp}.html")
                     default_path.write_text(report.comm_matrix_html, encoding="utf-8")
                     click.echo(f"🔗 通信矩阵可视化已保存到: {default_path}")
+
+            # 处理仪表板输出
+            if report.dashboard_html:
+                if dashboard_output:
+                    output_path = Path(dashboard_output)
+                    output_path.write_text(report.dashboard_html, encoding="utf-8")
+                    click.echo(f"📊 链路性能仪表板已保存到: {output_path}")
+                elif format == "html":
+                    # 如果是 HTML 格式且未指定单独输出路径，保存到默认文件
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    default_path = Path(f"link_dashboard_{timestamp}.html")
+                    default_path.write_text(report.dashboard_html, encoding="utf-8")
+                    click.echo(f"📊 链路性能仪表板已保存到: {default_path}")
         else:
             click.echo(click.style(f"❌ 分析失败: {report.error}", fg="red"))
             sys.exit(1)
@@ -180,7 +207,7 @@ def analyze(
         sys.exit(1)
 
 
-async def _run_analysis(profiling_path: str, backend: str, model: Optional[str], enable_comm_matrix: bool = True):
+async def _run_analysis(profiling_path: str, backend: str, model: Optional[str], enable_comm_matrix: bool = True, enable_dashboard: bool = True):
     """执行分析"""
     from src.llm.llm_interface import LLMConfig
     from src.agents.orchestrator import Orchestrator
@@ -195,6 +222,7 @@ async def _run_analysis(profiling_path: str, backend: str, model: Optional[str],
         profiling_path,
         llm_config=config,
         enable_comm_matrix=enable_comm_matrix,
+        enable_dashboard=enable_dashboard,
     )
     return await orchestrator.run()
 

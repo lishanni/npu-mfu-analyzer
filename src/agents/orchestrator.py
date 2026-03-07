@@ -42,6 +42,7 @@ class AnalysisReport:
     roofline_analysis: Any = None  # Roofline 分析结果
     communication_matrix: Optional[CommunicationMatrix] = None  # 通信矩阵分析结果
     comm_matrix_html: Optional[str] = None  # 通信矩阵可视化 HTML
+    dashboard_html: Optional[str] = None  # 链路性能仪表板 HTML
 
     def to_markdown(self) -> str:
         """转换为 Markdown 格式"""
@@ -116,6 +117,7 @@ class Orchestrator:
         llm_config: Optional[LLMConfig] = None,
         config: Optional[Dict[str, Any]] = None,
         enable_comm_matrix: bool = True,
+        enable_dashboard: bool = True,
         enable_deep_operator_analysis: bool = True,
     ):
         """
@@ -124,12 +126,14 @@ class Orchestrator:
             llm_config: LLM 配置
             config: 额外配置
             enable_comm_matrix: 是否启用通信矩阵分析
+            enable_dashboard: 是否启用链路性能仪表板
             enable_deep_operator_analysis: 是否启用深度算子分析 V2
         """
         self.profiling_path = profiling_path
         self.llm_config = llm_config or LLMConfig()
         self.config = config or {}
         self.enable_comm_matrix = enable_comm_matrix
+        self.enable_dashboard = enable_dashboard
         self.enable_deep_operator_analysis = enable_deep_operator_analysis
 
         # 初始化组件
@@ -200,14 +204,21 @@ class Orchestrator:
             # 2.6. 通信矩阵分析
             comm_matrix = None
             comm_matrix_html = None
+            dashboard_html = None
             if self.enable_comm_matrix:
                 comm_matrix = self._analyze_communication_matrix()
                 if comm_matrix:
-                    # 生成可视化
+                    # 生成通信矩阵可视化
                     from src.analyzers.communication_matrix_visualizer import CommunicationMatrixVisualizer
                     visualizer = CommunicationMatrixVisualizer(comm_matrix)
                     comm_matrix_html = visualizer.generate_html()
                     logger.info(f"Communication matrix analysis complete: {len(comm_matrix.link_metrics)} links")
+
+                    # 生成链路性能仪表板
+                    if self.enable_dashboard:
+                        from src.analyzers.link_performance_dashboard import generate_dashboard
+                        dashboard_html = generate_dashboard(comm_matrix)
+                        logger.info("Link performance dashboard generated")
 
             # 3. 检查是否有 AIC metrics 数据
             has_aic_metrics = self._check_aic_metrics_available()
@@ -261,6 +272,7 @@ class Orchestrator:
                 roofline_analysis=roofline_analysis,
                 communication_matrix=comm_matrix,
                 comm_matrix_html=comm_matrix_html,
+                dashboard_html=dashboard_html,
             )
             
         except Exception as e:
