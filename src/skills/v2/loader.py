@@ -22,6 +22,11 @@ from .base import (
     SkillOutput,
     SkillContext,
     SkillResult,
+    PythonSkill,
+    DiagnoseSkill,
+    AnalysisSkill,
+    ReasoningSkill,
+    GenerateSkill,
 )
 from .registry import SkillRegistry
 
@@ -55,13 +60,25 @@ class MarkdownSkill(BaseSkill):
 
     def _build_metadata(self) -> SkillMetadata:
         """构建元数据"""
+        # 解析优先级
+        priority_map = {
+            "P0": SkillPriority.CRITICAL,
+            "P1": SkillPriority.HIGH,
+            "P2": SkillPriority.NORMAL,
+            "critical": SkillPriority.CRITICAL,
+            "high": SkillPriority.HIGH,
+            "normal": SkillPriority.NORMAL,
+            "low": SkillPriority.LOW,
+        }
+        priority = priority_map.get(self.rule.priority.lower() if isinstance(self.rule.priority, str) else self.rule.priority, SkillPriority.NORMAL)
+
         return SkillMetadata(
             name=self.rule.name,
             display_name=self.rule.name.replace("_", " ").title(),
             description=self.rule.root_cause[:100] if self.rule.root_cause else "",
             skill_type=SkillType.DIAGNOSE,
             category=SkillCategory.DIAGNOSIS,
-            priority=SkillPriority[self.rule.priority.upper()] if self.rule.priority in ["P0", "P1", "P2"] else SkillPriority.NORMAL,
+            priority=priority,
             tags=self.rule.metadata.get("tags", []),
             dependencies=self.rule.metadata.get("dependencies", []),
         )

@@ -91,6 +91,25 @@ class SkillMetadata:
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
+        # 处理 inputs（可能是 SkillInput 或 dict）
+        inputs_list = []
+        for i in self.inputs:
+            if isinstance(i, dict):
+                inputs_list.append(i)
+            else:
+                inputs_list.append({
+                    "name": i.name, "type": i.type, "required": i.required,
+                    "default": i.default, "description": i.description, "source": i.source
+                })
+
+        # 处理 outputs（可能是 SkillOutput 或 dict）
+        outputs_list = []
+        for o in self.outputs:
+            if isinstance(o, dict):
+                outputs_list.append(o)
+            else:
+                outputs_list.append({"name": o.name, "type": o.type, "description": o.description})
+
         return {
             "name": self.name,
             "display_name": self.display_name,
@@ -101,15 +120,8 @@ class SkillMetadata:
             "version": self.version,
             "author": self.author,
             "tags": self.tags,
-            "inputs": [
-                {"name": i.name, "type": i.type, "required": i.required,
-                 "default": i.default, "description": i.description, "source": i.source}
-                for i in self.inputs
-            ],
-            "outputs": [
-                {"name": o.name, "type": o.type, "description": o.description}
-                for o in self.outputs
-            ],
+            "inputs": inputs_list,
+            "outputs": outputs_list,
             "dependencies": self.dependencies,
         }
 

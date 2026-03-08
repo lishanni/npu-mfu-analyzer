@@ -1,0 +1,142 @@
+{
+  "name": "npu-mfu-analyzer",
+  "description": "昇腾 NPU 大模型训练 MFU 智能分析工具",
+  "version": "0.1.0",
+  "skills": [
+    {
+      "name": "compute_mfu",
+      "description": "计算 Model FLOPS Utilization，评估硬件利用效率",
+      "command": "python -m src.skills.v2.skill_cli execute compute_mfu ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "compute_bandwidth",
+      "description": "计算通信带宽利用率",
+      "command": "python -m src.skills.v2.skill_cli execute compute_bandwidth ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "compute_overlap",
+      "description": "计算计算与通信的重叠比例",
+      "command": "python -m src.skills.v2.skill_cli execute compute_overlap ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "detect_slow_ranks",
+      "description": "检测性能异常的 Rank",
+      "command": "python -m src.skills.v2.skill_cli execute detect_slow_ranks ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "analyze_timeline",
+      "description": "分析 Profiling 时间线，识别性能瓶颈和异常模式",
+      "command": "python -m src.skills.v2.skill_cli execute analyze_timeline ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "analyze_communication",
+      "description": "分析通信行为，评估通信效率和拓扑性能",
+      "command": "python -m src.skills.v2.skill_cli execute analyze_communication ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "analyze_profiling",
+      "description": "执行完整的 Profiling 分析，包括 MFU、时间线、通信等",
+      "command": "python -m src.skills.v2.skill_cli analyze ${profiling_path}",
+      "parameters": {
+        "profiling_path": {
+          "type": "string",
+          "description": "Profiling 数据目录路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "compare_profiling",
+      "description": "对比分析两个 Profiling 数据，找出性能差异根因",
+      "command": "python -m src.skills.v2.skill_cli compare ${baseline_path} ${target_path}",
+      "parameters": {
+        "baseline_path": {
+          "type": "string",
+          "description": "基准 Profiling 数据路径",
+          "required": true
+        },
+        "target_path": {
+          "type": "string",
+          "description": "目标 Profiling 数据路径",
+          "required": true
+        }
+      }
+    },
+    {
+      "name": "list_skills",
+      "description": "列出所有可用的分析技能",
+      "command": "python -m src.skills.v2.skill_cli list-skills",
+      "parameters": {}
+    }
+  ],
+  "cli": {
+    "entry_point": "python -m src.skills.v2.skill_cli",
+    "commands": {
+      "analyze": "分析 Profiling 数据",
+      "compare": "对比分析两个 Profiling 数据",
+      "execute": "执行单个技能",
+      "list-skills": "列出所有可用技能",
+      "skill-info": "获取技能详细信息"
+    }
+  },
+  "examples": [
+    {
+      "description": "分析 Profiling 数据",
+      "command": "python -m src.skills.v2.skill_cli analyze /path/to/profiling"
+    },
+    {
+      "description": "对比分析",
+      "command": "python -m src.skills.v2.skill_cli compare /path/to/baseline /path/to/target"
+    },
+    {
+      "description": "执行 MFU 计算",
+      "command": "python -m src.skills.v2.skill_cli execute compute_mfu /path/to/profiling"
+    },
+    {
+      "description": "列出所有技能",
+      "command": "python -m src.skills.v2.skill_cli list-skills"
+    }
+  ]
+}
