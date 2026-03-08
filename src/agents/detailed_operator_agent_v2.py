@@ -8,6 +8,8 @@
 - 针对性优化建议生成
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass, field

@@ -2,7 +2,7 @@
 
 ## 1. Multi-Agent 智能分析
 
-基于 Multi-Agent 架构，11 个专业 Agent 协同工作：
+基于 Multi-Agent 架构，13 个专业 Agent 协同工作：
 
 ### 核心分析 Agent
 
@@ -15,6 +15,9 @@
 | **JitterAgent** | 抖动检测 | 计算/通信/对齐抖动、跨 Rank 方差、慢卡识别 |
 | **AdvisorAgent** | 综合建议 | 多 Agent 结果汇总、优先级建议、优化规则库 |
 | **DetailedOperatorAgent** | AIC 级算子分析 | Cube/Vector 利用率、L2 命中率、流水线停顿 |
+| **DetailedOperatorAgentV2** | 深度算子分析 | PMU 数据深度分析、瓶颈评分 |
+| **AICMicroarchAgent** | AIC 微架构分析 | 指令级/内存层次/流水线瓶颈诊断 |
+| **ClusterAgent** | 集群分析 | 多机拓扑、跨节点通信效率 |
 | **ComparisonAdvisorAgent** | 对比根因分析 | 两次 Profiling 差异根因、LLM / 规则引擎分析 |
 
 ### JitterAgent 详细说明
@@ -636,3 +639,192 @@ pool = LLMPool(configs=[
 # 自动选择可用后端
 response = await pool.complete(messages)
 ```
+
+## 13. Host-Device 堆栈关联分析
+
+通过解析 trace_view.json 中的 Host 侧堆栈信息，建立 Host-Device 关联，实现根因推理。
+
+### 核心功能
+
+| 功能 | 描述 |
+|------|------|
+| **堆栈解析** | 从 trace_view.json 提取 Python/C++ 堆栈 |
+| **模式识别** | 自动识别 torch.compile、eager、融合算子、mindspeed 等模式 |
+| **Host-Device 关联** | 基于 connection_id 建立 Torch 算子与 NPU 算子的关联 |
+| **根因推理** | 基于规则引擎自动识别性能问题根因 |
+
+### 支持的堆栈模式
+
+| 模式 | 特征 | 示例 |
+|------|------|------|
+| **torch_compile** | CompiledFunctionBackward, torch._dynamo | 图模式编译 |
+| **eager** | aten::, torch.ops | Eager 执行 |
+| **fusion_op** | NPUGroupedLinearGMM, FlashAttention | 融合算子 |
+| **mindspeed** | mindspeed., megatron., ParallelMLP | MindSpeed 框架 |
+| **torch_ascend** | torch_npu, aclnn, AscendCL | 昇腾底层 |
+| **distributed** | torch.distributed, HCCL, ProcessGroup | 分布式通信 |
+| **optimizer** | Optimizer.step, AdamW, FusedAdam | 优化器 |
+
+### CLI 使用
+
+```bash
+# 默认启用 Host-Device 关联分析
+npu-analyzer analyze /path/to/profiling
+
+# 禁用
+npu-analyzer analyze /path/to/profiling --no-host-device-correlation
+```
+
+### Python API
+
+```python
+from src.analyzers.host_device_correlator import HostDeviceCorrelator, analyze_from_trace_file
+from src.analyzers.operator_source_classifier import OperatorSourceClassifier
+
+# 执行关联分析
+result = analyze_from_trace_file("/path/to/trace_view.json")
+print(f"总调用链: {result.total_chains}")
+print(f"来源分布: {result.by_source_type}")
+
+# 分类器
+classifier = OperatorSourceClassifier()
+chains = build_call_chains_from_file("/path/to/trace_view.json")
+stats = classifier.build_stats(chains)
+print(f"Eager 算子: {stats.eager_ops}")
+print(f"融合算子: {stats.fusion_ops}")
+```
+
+## 14. 根因推理引擎
+
+基于规则引擎的自动根因识别，支持单版本分析和对比分析。
+
+### 单版本分析规则 (analyze 命令)
+
+| 规则 | 触发条件 | 优先级 |
+|------|---------|--------|
+| **excessive_small_operators** | 小算子（<10us）占比 > 30% | P0 |
+| **mixed_execution_mode** | eager 和 torch.compile 混合使用 | P1 |
+| **insufficient_fusion_operators** | 融合算子占比 < 10% | P1 |
+| **high_communication_ratio** | 通信时间占比 > 30% | P0 |
+| **poor_memory_hierarchy_utilization** | 内存操作算子占比 > 20% | P1 |
+
+### 对比分析规则 (compare 命令)
+
+| 规则 | 触发条件 | 优先级 |
+|------|---------|--------|
+| **torch_compile_fusion_issue** | torch.compile 未开启算子融合 | P0 |
+| **eager_compile_switch** | eager/compile 模式切换 | P1 |
+| **communication_bottleneck** | 通信时间显著增加 | P0 |
+
+### 输出格式
+
+```markdown
+## 根因分析
+
+### 1. 🔴 [高优先级] excessive_small_operators
+
+**根因**: 大量小算子导致 kernel launch 开销过高，GPU/NPU 利用率低
+
+**证据**:
+  - 小算子（<10us）占比: 45.2%
+  - 小算子数量: 1234 / 2730
+  - 主要小算子类型: Add(456), Mul(389), Copy(234)
+
+**受影响算子**: Add, Mul, Copy, Transpose, Reshape
+
+**优化建议**:
+  - 启用算子融合优化（torch.compile 或自定义融合）
+  - 使用 torch.jit.script 或 torch.compile 编译模型
+  - 检查是否有不必要的张量操作
+```
+
+### Python API
+
+```python
+from src.analyzers.root_cause_engine import RootCauseSkillEngine, RootCauseFinding
+
+engine = RootCauseSkillEngine()
+
+# 单版本分析
+findings = engine.analyze_single(chains, stats, profiling_summary)
+for finding in findings:
+    print(f"[{finding.priority}] {finding.rule_name}: {finding.root_cause}")
+
+# 对比分析
+findings = engine.analyze(chains_a, chains_b, diff_result)
+```
+
+## 15. 通信矩阵分析
+
+链路级带宽利用率分析，支持 HCCS/RDMA 传输类型识别。
+
+### 核心功能
+
+| 功能 | 描述 |
+|------|------|
+| **链路分析** | 节点内（HCCS）/节点间（RDMA）链路识别 |
+| **带宽计算** | 实测带宽 vs 理论带宽对比 |
+| **异常检测** | 慢链路、瓶颈链路自动识别 |
+| **热力图** | 交互式 HTML 可视化 |
+
+### CLI 使用
+
+```bash
+# 默认启用通信矩阵分析
+npu-analyzer analyze /path/to/profiling
+
+# 禁用
+npu-analyzer analyze /path/to/profiling --no-comm-matrix
+
+# 自定义输出路径
+npu-analyzer analyze /path/to/profiling --comm-matrix-output comm_matrix.html
+```
+
+### Python API
+
+```python
+from src.analyzers.communication_matrix_analyzer import CommunicationMatrixAnalyzer
+
+analyzer = CommunicationMatrixAnalyzer(world_size=8, npus_per_machine=8)
+matrix = analyzer.analyze_from_db("/path/to/profiling.db")
+
+print(f"总通信量: {matrix.total_comm_data_mb:.2f} MB")
+print(f"平均带宽: {matrix.avg_bandwidth_gbps:.2f} GB/s")
+print(f"慢链路: {len(matrix.slow_links)}")
+print(f"瓶颈链路: {len(matrix.bottleneck_links)}")
+```
+
+## 16. 链路性能仪表板
+
+交互式 HTML 可视化，用于分析通信矩阵中的链路性能。
+
+### 核心功能
+
+| 功能 | 描述 |
+|------|------|
+| **实时指标卡片** | 总通信量、带宽、节点内/间比例、慢链路数、瓶颈链路数、通信效率评分 |
+| **交互式热力图** | 带宽利用率热力图、通信量热力图 |
+| **趋势图表** | 带宽分布直方图、利用率分布图 |
+| **异常链路分析** | 慢链路列表、瓶颈链路列表、异常类型分类 |
+| **筛选功能** | 按传输类型（HCCS/RDMA）和状态（慢链路/瓶颈链路）筛选 |
+
+### CLI 使用
+
+```bash
+# 默认启用仪表板
+npu-analyzer analyze /path/to/profiling
+
+# 禁用仪表板
+npu-analyzer analyze /path/to/profiling --no-dashboard
+
+# 自定义输出路径
+npu-analyzer analyze /path/to/profiling --dashboard-output dashboard.html
+```
+
+### 输出示例
+
+仪表板包含：
+1. **指标卡片区域**：总通信量、平均带宽、峰值带宽、节点内/间通信比例、慢链路数、瓶颈链路数、通信效率评分
+2. **热力图区域**：带宽利用率矩阵、通信量矩阵，支持筛选
+3. **图表区域**：带宽分布直方图、利用率分布图
+4. **异常链路表格**：慢链路详情、瓶颈链路详情

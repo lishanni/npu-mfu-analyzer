@@ -2,6 +2,52 @@
 
 所有重大变更均记录在此文件中。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.5.0] - 2026-03
+
+### Added
+- **Host-Device 堆栈关联分析模块**
+  - `StackParser`：从 trace_view.json 解析 Python/C++ 堆栈
+  - `HostDeviceCorrelator`：基于 connection_id 建立 Host-Device 调用链
+  - `OperatorSourceClassifier`：算子来源分类（torch_compile/eager/fusion_op/mindspeed/torch_ascend/distributed/optimizer/unknown）
+  - 支持的堆栈模式：torch.compile、融合算子、eager、mindspeed、torch-ascend、分布式通信、优化器
+- **根因推理引擎**
+  - `RootCauseSkillEngine`：基于规则引擎的自动根因识别
+  - 支持 **analyze 命令**（单版本性能/MFU 低的原因分析）
+  - 支持 **compare 命令**（对比根因推理）
+  - 5 个单版本分析规则：小算子过多、混合执行模式、融合算子不足、通信占比过高、内存层次利用不佳
+  - 3 个对比分析规则：torch.compile 融合问题、eager/compile 切换、通信瓶颈
+  - Markdown Skills 格式规则库（`src/skills/root_cause_analysis/`）
+- **通信矩阵分析**
+  - `CommunicationMatrixAnalyzer`：链路级带宽利用率分析
+  - `CommunicationMatrixVisualizer`：HTML 热力图可视化
+  - HCCS/RDMA 传输类型识别
+  - 慢链路/瓶颈链路自动检测
+  - CLI `--comm-matrix` 和 `--comm-matrix-output` 选项
+- **链路性能仪表板**
+  - `LinkPerformanceDashboard`：交互式 HTML 可视化
+  - 实时指标卡片：总通信量、带宽利用率、节点内/间比例、慢链路数
+  - 交互式热力图：带宽利用率、通信量，支持传输类型和状态筛选
+  - 趋势图表：带宽分布直方图、利用率分布图
+  - 异常链路分析：慢链路列表、瓶颈链路列表
+  - CLI `--dashboard` 和 `--dashboard-output` 选项
+- **AIC 微架构深度分析**
+  - `InstructionAnalyzer`：Cube/Vector/Scalar 指令混合比例、利用率、发射率
+  - `MemoryHierarchyAnalyzer`：L2/UB/L0 缓存访问模式、命中率、局部性评分
+  - `PipelineAnalyzer`：流水线利用率、停顿率、停顿原因细分（MTE/Vector/Scalar/Dependency/Memory/Sync）
+  - `PMUDataParser`：PMU 数据解析器
+  - `AICMicroarchAgent`：AIC 微架构分析 Agent
+  - CLI `--aic-microarch` 和 `--aic-report-output` 选项
+- `DetailedOperatorAgentV2`：深度算子分析 Agent V2
+- `ClusterAgent`：集群分析 Agent
+- 文档 `docs/design/communication_matrix_design.md`：通信矩阵设计文档
+
+### Changed
+- `Orchestrator`：新增 `enable_host_device_correlation`、`enable_dashboard`、`enable_aic_microarch` 参数
+- `AnalysisReport`：新增 `source_analysis`、`host_device_chains`、`root_cause_findings` 字段
+- `ProfilingDiff`：新增 `source_changes`、`root_cause_findings` 字段
+- `src/analyzers/__init__.py`：新增 Host-Device/RootCause 相关类导出
+- `src/data_loader/__init__.py`：新增堆栈相关类导出
+
 ## [0.4.0] - 2026-02
 
 ### Added

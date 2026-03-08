@@ -19,18 +19,35 @@ npu-analyzer analyze <PROFILING_PATH> [OPTIONS]
 | `-b, --backend` | TEXT | openai | LLM 后端 (openai/claude/ollama/deepseek/mock) |
 | `-m, --model` | TEXT | 后端默认 | LLM 模型名称 |
 | `-f, --format` | TEXT | markdown | 报告格式 (markdown/html/md) |
+| `--comm-matrix` / `--no-comm-matrix` | FLAG | 启用 | 启用/禁用通信矩阵分析 |
+| `--comm-matrix-output` | TEXT | 自动 | 通信矩阵可视化输出路径 |
+| `--dashboard` / `--no-dashboard` | FLAG | 启用 | 启用/禁用链路性能仪表板 |
+| `--dashboard-output` | TEXT | 自动 | 仪表板 HTML 输出路径 |
+| `--aic-microarch` / `--no-aic-microarch` | FLAG | 启用 | 启用/禁用 AIC 微架构分析 |
+| `--aic-report-output` | TEXT | 自动 | AIC 微架构报告输出路径 |
+| `--host-device-correlation` / `--no-host-device-correlation` | FLAG | 启用 | 启用/禁用 Host-Device 关联分析 |
 | `-v, --verbose` | FLAG | - | 详细输出 |
 
 **示例**：
 ```bash
+# 基本分析
 npu-analyzer analyze /data/profiling -b ollama -f html -o report.html
+
+# 禁用所有可选分析（快速模式）
+npu-analyzer analyze /data/profiling --no-comm-matrix --no-dashboard --no-aic-microarch
+
+# 自定义输出路径
+npu-analyzer analyze /data/profiling \
+    --comm-matrix-output comm_matrix.html \
+    --dashboard-output dashboard.html \
+    --aic-report-output aic_report.html
 ```
 
 ---
 
 ### npu-analyzer compare
 
-对比两个 Profiling 数据。
+对比两个 Profiling 数据，支持 5 层级差异分析和根因推理。
 
 ```bash
 npu-analyzer compare <PATH_A> <PATH_B> [OPTIONS]
@@ -47,11 +64,35 @@ npu-analyzer compare <PATH_A> <PATH_B> [OPTIONS]
 | `--label-a` | TEXT | 路径名 | 基准版本标签 |
 | `--label-b` | TEXT | 路径名 | 对照版本标签 |
 | `--force` | FLAG | - | 跳过相似度检查，强制对比 |
+| `--host-device-correlation` / `--no-host-device-correlation` | FLAG | 启用 | 启用/禁用 Host-Device 关联和根因分析 |
 | `-v, --verbose` | FLAG | - | 详细输出 |
+
+**对比分析输出包含**：
+- **对比概览**：两版本基本信息、整体判断（提升/劣化/混合/不变）
+- **相似度评估**：4 维度评分（硬件/模型/框架/数据形状）
+- **5 层级差异分析**：Summary/Timeline/Operator/Communication/Memory
+- **根因推理**：自动识别性能变化原因（如 torch.compile 融合问题、通信瓶颈等）
+- **优化建议**：按优先级排序的可操作建议
 
 **示例**：
 ```bash
-npu-analyzer compare /data/v1 /data/v2 --label-a "CANN 8.0" --label-b "CANN 8.1" -b openai
+# 基本对比（使用 Mock 后端，快速）
+npu-analyzer compare /data/v1 /data/v2
+
+# 带 LLM 深度根因分析
+npu-analyzer compare /data/v1 /data/v2 -b openai
+
+# 带标签对比
+npu-analyzer compare /data/v1 /data/v2 \
+    --label-a "CANN 8.0" --label-b "CANN 8.1" \
+    -o comparison_report.md
+
+# 不同并行策略对比（跳过相似度检查）
+npu-analyzer compare /data/tp4 /data/tp8 \
+    --label-a "TP=4" --label-b "TP=8" --force
+
+# 输出 HTML 格式
+npu-analyzer compare /data/v1 /data/v2 -f html -o report.html
 ```
 
 ---
@@ -406,6 +447,8 @@ summary = summarizer.summarize(loader)   # ProfilingSummary
 from src.analyzers import (
     OverlapCalculator, SlowRankDetector, BubbleAnalyzer,
     MFUCalculator, SimilarityChecker, ProfilingDiffEngine,
+    CommunicationMatrixAnalyzer, HostDeviceCorrelator,
+    RootCauseSkillEngine,
 )
 
 # MFU 计算
@@ -419,6 +462,18 @@ result = detector.detect(rank_times)
 # 对比差异
 diff_engine = ProfilingDiffEngine()
 diff = diff_engine.compute(summary_a, summary_b)
+
+# 通信矩阵分析
+comm_analyzer = CommunicationMatrixAnalyzer(world_size=8)
+matrix = comm_analyzer.analyze_from_db(db_path)
+
+# Host-Device 关联分析
+correlator = HostDeviceCorrelator()
+chains = correlator.build_call_chains(trace_events)
+
+# 根因推理
+root_cause_engine = RootCauseSkillEngine()
+findings = root_cause_engine.analyze_single(chains, stats)
 ```
 
 ### 硬件/模式
@@ -479,4 +534,88 @@ from src.report import ReportGenerator, ReportFormat
 generator = ReportGenerator()
 report_text = generator.generate(report_data, format=ReportFormat.HTML)
 generator.save(report_text, "/output/report.html")
+```
+
+### Host-Device 堆栈关联分析
+
+```python
+from src.analyzers.host_device_correlator import (
+    HostDeviceCorrelator,
+    analyze_from_trace_file,
+    build_call_chains_from_file,
+)
+from src.analyzers.operator_source_classifier import (
+    OperatorSourceClassifier,
+    classify_operators,
+    discover_new_patterns,
+)
+from src.data_loader.stack_types import HostDeviceChain, CorrelationStats
+
+# 从 trace 文件构建调用链
+chains = build_call_chains_from_file("/path/to/trace_view.json")
+print(f"总调用链数: {len(chains)}")
+
+# 分析算子来源分布
+classifier = OperatorSourceClassifier()
+stats = classifier.build_stats(chains)
+print(f"来源分布: {stats.by_source_type}")
+print(f"Eager 算子: {stats.eager_ops}")
+print(f"融合算子: {stats.fusion_ops}")
+```
+
+### 根因推理引擎
+
+```python
+from src.analyzers.root_cause_engine import (
+    RootCauseSkillEngine,
+    RootCauseFinding,
+    analyze_root_causes,
+)
+
+# 单版本根因分析
+engine = RootCauseSkillEngine()
+findings = engine.analyze_single(
+    chains=chains,
+    stats=stats,
+    profiling_summary=summary,
+)
+
+for finding in findings:
+    print(f"[{finding.priority}] {finding.rule_name}")
+    print(f"  根因: {finding.root_cause}")
+    print(f"  证据: {finding.evidence}")
+    print(f"  建议: {finding.optimization_suggestions}")
+
+# 对比分析根因推理
+findings = engine.analyze(chains_a, chains_b, diff_result)
+```
+
+### 通信矩阵分析
+
+```python
+from src.analyzers.communication_matrix_analyzer import (
+    CommunicationMatrixAnalyzer,
+    CommunicationMatrix,
+)
+from src.analyzers.communication_matrix_visualizer import CommunicationMatrixVisualizer
+from src.analyzers.link_performance_dashboard import generate_dashboard
+
+# 分析通信矩阵
+analyzer = CommunicationMatrixAnalyzer(world_size=8, npus_per_machine=8)
+matrix = analyzer.analyze_from_db("/path/to/profiling.db")
+
+print(f"总通信量: {matrix.total_comm_data_mb:.2f} MB")
+print(f"平均带宽: {matrix.avg_bandwidth_gbps:.2f} GB/s")
+print(f"慢链路数: {len(matrix.slow_links)}")
+
+# 生成热力图可视化
+visualizer = CommunicationMatrixVisualizer(matrix)
+html = visualizer.generate_html()
+with open("comm_matrix.html", "w") as f:
+    f.write(html)
+
+# 生成链路性能仪表板
+dashboard_html = generate_dashboard(matrix)
+with open("dashboard.html", "w") as f:
+    f.write(dashboard_html)
 ```

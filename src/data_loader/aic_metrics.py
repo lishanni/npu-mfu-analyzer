@@ -6,7 +6,7 @@ AIC Metrics 数据结构定义
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 
 @dataclass
