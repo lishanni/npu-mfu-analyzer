@@ -27,7 +27,7 @@ class RootCauseRule:
     """根因推理规则"""
     name: str
     trigger_conditions: Dict[str, Any]
-    root_cause_description: str
+    root_cause: str
     evidence_patterns: List[str]
     optimization_suggestions: List[str]
     impact: Dict[str, str]  # performance_impact, fix_difficulty, priority
@@ -786,7 +786,7 @@ class RootCauseSkillEngine:
 
         return RootCauseFinding(
             rule_name=rule.name,
-            root_cause=rule.root_cause_description,
+            root_cause=rule.root_cause,
             evidence=evidence,
             affected_operators=affected_ops,
             optimization_suggestions=rule.optimization_suggestions,
@@ -839,7 +839,7 @@ class RootCauseSkillEngine:
 
         return RootCauseFinding(
             rule_name=rule.name,
-            root_cause=rule.root_cause_description,
+            root_cause=rule.root_cause,
             evidence=evidence,
             affected_operators=affected_ops,
             optimization_suggestions=rule.optimization_suggestions,
@@ -887,7 +887,7 @@ class RootCauseSkillEngine:
 
         return RootCauseFinding(
             rule_name=rule.name,
-            root_cause=rule.root_cause_description,
+            root_cause=rule.root_cause,
             evidence=evidence,
             affected_operators=[],
             optimization_suggestions=rule.optimization_suggestions,
