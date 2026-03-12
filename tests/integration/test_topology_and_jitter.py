@@ -15,12 +15,12 @@ import numpy as np
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.topology import (
+from npu_mfu_analyzer.topology import (
     TopologyAnalyzer,
     CollectiveProfiler,
     CollectiveOpType,
 )
-from src.agents.jitter_agent import JitterDetector, JitterMetrics
+from npu_mfu_analyzer.agents.jitter_agent import JitterDetector, JitterMetrics
 
 
 def test_topology_analyzer():

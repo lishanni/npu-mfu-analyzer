@@ -13,9 +13,9 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.agents.operator_agent import FusionAnalyzer, AIKGIntegrator, AIKGRequestConverter
-from src.agents.fusion_rules import FusionOpportunity
-from src.data_loader.profiling_loader import ProfilingLoader
+from npu_mfu_analyzer.agents.operator_agent import FusionAnalyzer, AIKGIntegrator, AIKGRequestConverter
+from npu_mfu_analyzer.agents.fusion_rules import FusionOpportunity
+from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
 
 def test_real_profiling_fusion_analysis():
@@ -112,7 +112,7 @@ def test_real_profiling_fusion_analysis():
 
         # 5. AIKG 客户端测试（可选，不实际调用 LLM）
         print("\n[5/5] AIKG 客户端测试...")
-        from src.agents.aikg_integration import AIKGKernelClient
+        from npu_mfu_analyzer.agents.aikg_integration import AIKGKernelClient
 
         # 创建客户端（不配置 LLM，用于测试流程）
         client = AIKGKernelClient(
@@ -182,7 +182,7 @@ def test_real_profiling_fusion_analysis():
         print("\n[6/6] 文件保存测试...")
         import tempfile
         with tempfile.TemporaryDirectory() as tmpdir:
-            from src.agents.aikg_integration import GeneratedKernel, GenerationStatus
+            from npu_mfu_analyzer.agents.aikg_integration import GeneratedKernel, GenerationStatus
 
             # 模拟一个生成的内核
             mock_kernel = GeneratedKernel(

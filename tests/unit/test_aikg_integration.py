@@ -10,7 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from dataclasses import asdict
 
-from src.agents.aikg_integration import (
+from npu_mfu_analyzer.agents.aikg_integration import (
     AIKGRequest,
     GeneratedKernel,
     GenerationStatus,
@@ -19,7 +19,7 @@ from src.agents.aikg_integration import (
     AIKGKernelClient,
     AIKGIntegrator,
 )
-from src.agents.fusion_rules import FusionOpportunity
+from npu_mfu_analyzer.agents.fusion_rules import FusionOpportunity
 
 
 class TestAIKGRequest:

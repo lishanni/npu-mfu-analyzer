@@ -10,8 +10,8 @@ class TestBaseAgent:
     
     def test_agent_message_to_llm_message(self):
         """测试消息转换"""
-        from src.agents.base_agent import AgentMessage
-        from src.llm.llm_interface import Message
+        from npu_mfu_analyzer.agents.base_agent import AgentMessage
+        from npu_mfu_analyzer.llm.llm_interface import Message
         
         agent_msg = AgentMessage(role="user", content="Hello")
         llm_msg = agent_msg.to_llm_message()
@@ -22,7 +22,7 @@ class TestBaseAgent:
     
     def test_analysis_result_success(self):
         """测试成功的分析结果"""
-        from src.agents.base_agent import AnalysisResult
+        from npu_mfu_analyzer.agents.base_agent import AnalysisResult
         
         result = AnalysisResult(
             agent_name="TestAgent",
@@ -41,8 +41,8 @@ class TestTimelineAgent:
     @pytest.mark.asyncio
     async def test_analyze_with_mock_llm(self):
         """使用 Mock LLM 测试分析"""
-        from src.agents.base_agent import TimelineAgent
-        from src.llm.llm_interface import LLMConfig, LLMFactory
+        from npu_mfu_analyzer.agents.base_agent import TimelineAgent
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory
         
         config = LLMConfig(backend="mock")
         llm = LLMFactory.create(config)
@@ -66,8 +66,8 @@ class TestOrchestrator:
     
     def test_init(self, tmp_path):
         """测试初始化"""
-        from src.agents.orchestrator import Orchestrator
-        from src.llm.llm_interface import LLMConfig
+        from npu_mfu_analyzer.agents.orchestrator import Orchestrator
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig
         
         config = LLMConfig(backend="mock")
         orchestrator = Orchestrator(str(tmp_path), llm_config=config)
@@ -78,8 +78,8 @@ class TestOrchestrator:
     @pytest.mark.asyncio
     async def test_run_with_empty_data(self, tmp_path):
         """测试空数据分析"""
-        from src.agents.orchestrator import Orchestrator
-        from src.llm.llm_interface import LLMConfig
+        from npu_mfu_analyzer.agents.orchestrator import Orchestrator
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig
         
         config = LLMConfig(backend="mock")
         orchestrator = Orchestrator(str(tmp_path), llm_config=config)
@@ -95,8 +95,8 @@ class TestAnalysisReport:
     
     def test_to_markdown(self):
         """测试 Markdown 输出"""
-        from src.agents.orchestrator import AnalysisReport
-        from src.data_loader.data_summarizer import ProfilingSummary
+        from npu_mfu_analyzer.agents.orchestrator import AnalysisReport
+        from npu_mfu_analyzer.data_loader.data_summarizer import ProfilingSummary
         
         report = AnalysisReport(
             success=True,

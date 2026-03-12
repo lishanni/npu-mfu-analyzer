@@ -8,18 +8,18 @@ import pytest
 from unittest.mock import MagicMock, patch
 from dataclasses import dataclass
 
-from src.data_loader.data_summarizer import (
+from npu_mfu_analyzer.data_loader.data_summarizer import (
     ProfilingSummary,
     OverlapMetrics,
     StepMetrics,
 )
-from src.data_loader.profiling_loader import ProfilingInfo
-from src.analyzers.similarity_checker import (
+from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingInfo
+from npu_mfu_analyzer.analyzers.similarity_checker import (
     SimilarityChecker,
     SimilarityResult,
     ComparabilityLevel,
 )
-from src.analyzers.profiling_diff import (
+from npu_mfu_analyzer.analyzers.profiling_diff import (
     ProfilingDiffEngine,
     ProfilingDiff,
     MetricChange,
@@ -444,8 +444,8 @@ class TestComparisonAdvisorAgent:
     @pytest.mark.asyncio
     async def test_rule_based_analysis(self, summary_a, summary_b):
         """规则引擎分析（不依赖 LLM）"""
-        from src.agents.comparison_agent import ComparisonAdvisorAgent
-        from src.llm.llm_interface import LLMConfig, LLMFactory
+        from npu_mfu_analyzer.agents.comparison_agent import ComparisonAdvisorAgent
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory
 
         # 使用 mock LLM
         llm_config = LLMConfig(backend="mock")
@@ -478,8 +478,8 @@ class TestComparisonAdvisorAgent:
 
     def test_rule_based_fallback(self, summary_a, summary_b):
         """规则引擎降级分析"""
-        from src.agents.comparison_agent import ComparisonAdvisorAgent
-        from src.llm.llm_interface import LLMConfig, LLMFactory
+        from npu_mfu_analyzer.agents.comparison_agent import ComparisonAdvisorAgent
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory
 
         llm = LLMFactory.create(LLMConfig(backend="mock"))
         agent = ComparisonAdvisorAgent(llm)

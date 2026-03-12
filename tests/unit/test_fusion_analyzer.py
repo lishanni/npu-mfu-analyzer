@@ -5,7 +5,7 @@ Unit tests for FusionAnalyzer
 """
 
 import pytest
-from src.agents.operator_agent import FusionAnalyzer, FusionOpportunity
+from npu_mfu_analyzer.agents.operator_agent import FusionAnalyzer, FusionOpportunity
 
 
 class TestFusionAnalyzer:

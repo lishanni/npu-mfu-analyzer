@@ -16,7 +16,7 @@ class TestTopKernels:
 
     def test_get_kernels_from_db(self, tmp_path):
         """测试从 DB 获取 Top Kernel 算子"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建测试数据库
         db_path = tmp_path / "test.db"
@@ -61,7 +61,7 @@ class TestTopKernels:
 
     def test_get_kernels_from_op_statistic_csv(self, tmp_path):
         """测试从 op_statistic.csv 获取 Top Kernel 算子"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建测试 CSV 文件
         import pandas as pd
@@ -83,7 +83,7 @@ class TestTopKernels:
 
     def test_get_kernels_from_kernel_details_csv(self, tmp_path):
         """测试从 kernel_details.csv 获取 Top Kernel 算子"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建测试 CSV 文件
         import pandas as pd
@@ -104,7 +104,7 @@ class TestTopKernels:
 
     def test_get_kernels_from_timeline_filters_python(self, tmp_path):
         """测试从 timeline 过滤 Kernel，排除 Python 栈帧"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建测试 trace_view.json
         trace_file = tmp_path / "trace_view.json"
@@ -134,7 +134,7 @@ class TestTopKernels:
 
     def test_get_kernels_empty_data(self, tmp_path):
         """测试空数据返回空列表"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         loader = ProfilingLoader(str(tmp_path))
         kernels = loader.get_top_kernels()
@@ -143,7 +143,7 @@ class TestTopKernels:
 
     def test_get_kernels_with_various_csv_formats(self, tmp_path):
         """测试各种 CSV 格式的兼容性"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 测试不同的列名格式
         test_cases = [

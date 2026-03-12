@@ -21,7 +21,7 @@ class TestRankDetection:
 
     def test_count_ranks_with_rank_prefix(self, tmp_path):
         """测试识别 rank_ 前缀"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建多个 rank 的文件
         for i in range(4):
@@ -36,7 +36,7 @@ class TestRankDetection:
 
     def test_count_ranks_with_worker_dash(self, tmp_path):
         """测试识别 worker- 前缀（带连字符）"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建多个 worker 的文件
         for i in range(8):
@@ -51,7 +51,7 @@ class TestRankDetection:
 
     def test_count_ranks_with_worker_underscore(self, tmp_path):
         """测试识别 worker_ 前缀（带下划线）"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建多个 worker 的文件
         for i in range(3):
@@ -66,7 +66,7 @@ class TestRankDetection:
 
     def test_count_ranks_with_profiler_prefix(self, tmp_path):
         """测试识别 profiler_ 前缀"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建多个 profiler 的目录（使用 trace_view.json 模拟）
         for i in range(2):
@@ -81,7 +81,7 @@ class TestRankDetection:
 
     def test_count_ranks_complex_directory_structure(self, tmp_path):
         """测试识别复杂目录结构"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 模拟真实的复杂目录结构
         # profiler_zarr/ma-job-xxx-worker-0_yyy/ASCEND_PROFILER_OUTPUT/trace_view.json
@@ -98,7 +98,7 @@ class TestRankDetection:
 
     def test_count_ranks_no_rank_returns_one(self, tmp_path):
         """测试没有 rank 信息时返回 1"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 只有一个通用的 trace_view.json
         self._create_trace_file(tmp_path, "trace_view.json")
@@ -110,7 +110,7 @@ class TestRankDetection:
 
     def test_get_json_path_with_worker_dash(self, tmp_path):
         """测试获取 worker- 模式的 JSON 路径"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建多个 worker
         for i in range(3):
@@ -127,7 +127,7 @@ class TestRankDetection:
 
     def test_get_json_path_with_rank_prefix(self, tmp_path):
         """测试获取 rank_ 模式的 JSON 路径"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 创建多个 rank
         for i in range(3):
@@ -144,7 +144,7 @@ class TestRankDetection:
 
     def test_mixed_naming_conventions(self, tmp_path):
         """测试混合命名约定"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 混合使用不同的命名方式
         rank_dir = tmp_path / "rank_0"
@@ -167,7 +167,7 @@ class TestRankDetection:
 
     def test_case_insensitive_matching(self, tmp_path):
         """测试大小写不敏感的匹配"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
         # 使用大写命名
         for i in range(2):

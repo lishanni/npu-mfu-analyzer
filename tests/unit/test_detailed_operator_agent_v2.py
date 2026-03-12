@@ -5,7 +5,7 @@ Detailed Operator Agent V2 单元测试
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.agents.detailed_operator_agent_v2 import (
+from npu_mfu_analyzer.agents.detailed_operator_agent_v2 import (
     DetailedOperatorAgentV2,
     InstructionMixAnalysis,
     MemoryHierarchyAnalysis,
@@ -13,7 +13,7 @@ from src.agents.detailed_operator_agent_v2 import (
     OperatorDeepAnalysisResult,
     OPTIMIZATION_STRATEGIES,
 )
-from src.data_loader.aic_metrics import (
+from npu_mfu_analyzer.data_loader.aic_metrics import (
     ExtendedAICMetrics,
     ExtendedArithmeticUtilization,
     ExtendedMemoryMetrics,

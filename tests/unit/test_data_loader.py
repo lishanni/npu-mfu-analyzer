@@ -14,7 +14,7 @@ class TestStreamParser:
     
     def test_init_with_valid_path(self, tmp_path):
         """测试有效路径初始化"""
-        from src.data_loader.stream_parser import StreamParser
+        from npu_mfu_analyzer.data_loader.stream_parser import StreamParser
         
         # 创建测试 JSON 文件
         test_file = tmp_path / "test.json"
@@ -25,7 +25,7 @@ class TestStreamParser:
     
     def test_iter_events_streaming(self, tmp_path):
         """测试流式解析"""
-        from src.data_loader.stream_parser import StreamParser
+        from npu_mfu_analyzer.data_loader.stream_parser import StreamParser
         
         # 创建测试数据
         events = [
@@ -44,7 +44,7 @@ class TestStreamParser:
     
     def test_parse_with_filter(self, tmp_path):
         """测试带过滤的解析"""
-        from src.data_loader.stream_parser import StreamParser
+        from npu_mfu_analyzer.data_loader.stream_parser import StreamParser
         
         events = [
             {"name": "op1", "ts": 100, "dur": 10, "cat": "Kernel"},
@@ -71,7 +71,7 @@ class TestTimelineSummarizer:
     
     def test_process_event(self):
         """测试事件处理"""
-        from src.data_loader.stream_parser import TimelineSummarizer
+        from npu_mfu_analyzer.data_loader.stream_parser import TimelineSummarizer
         
         summarizer = TimelineSummarizer(max_top_events=5)
         
@@ -97,7 +97,7 @@ class TestProfilingLoader:
     
     def test_detect_empty_dir(self, tmp_path):
         """测试空目录检测"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
         
         loader = ProfilingLoader(str(tmp_path))
         info = loader.detect()
@@ -107,7 +107,7 @@ class TestProfilingLoader:
     
     def test_detect_json_data(self, tmp_path):
         """测试 JSON 数据检测"""
-        from src.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
         
         # 创建 trace_view.json
         trace_file = tmp_path / "trace_view.json"
@@ -125,8 +125,8 @@ class TestDataSummarizer:
     
     def test_summarize_empty_data(self, tmp_path):
         """测试空数据摘要"""
-        from src.data_loader.profiling_loader import ProfilingLoader
-        from src.data_loader.data_summarizer import DataSummarizer
+        from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
+        from npu_mfu_analyzer.data_loader.data_summarizer import DataSummarizer
         
         loader = ProfilingLoader(str(tmp_path))
         summarizer = DataSummarizer(loader)
@@ -138,7 +138,7 @@ class TestDataSummarizer:
     
     def test_to_prompt_text(self):
         """测试 Prompt 文本生成"""
-        from src.data_loader.data_summarizer import ProfilingSummary, OverlapMetrics
+        from npu_mfu_analyzer.data_loader.data_summarizer import ProfilingSummary, OverlapMetrics
         
         summary = ProfilingSummary(
             data_path="/test/path",

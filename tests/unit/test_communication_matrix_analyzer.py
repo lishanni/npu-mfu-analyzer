@@ -3,7 +3,7 @@ Communication Matrix Analyzer 单元测试
 """
 
 import pytest
-from src.analyzers.communication_matrix_analyzer import (
+from npu_mfu_analyzer.analyzers.communication_matrix_analyzer import (
     CommunicationMatrixAnalyzer,
     CommunicationMatrix,
     LinkMetrics,

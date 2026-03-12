@@ -7,7 +7,7 @@ import tempfile
 import json
 from pathlib import Path
 
-from src.data_loader.data_validator import (
+from npu_mfu_analyzer.data_loader.data_validator import (
     ProfilingDataValidator,
     ProfilingDataSanitizer,
     RobustTimelineParser,

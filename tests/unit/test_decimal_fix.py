@@ -6,7 +6,7 @@
 
 import pytest
 from decimal import Decimal
-from src.data_loader.stream_parser import TimelineSummarizer
+from npu_mfu_analyzer.data_loader.stream_parser import TimelineSummarizer
 
 
 class TestDecimalTypeConversion:
@@ -113,7 +113,7 @@ class TestDecimalTypeConversion:
 
     def test_extract_time_info_with_decimal(self):
         """测试 _extract_time_info 处理 Decimal 类型"""
-        from src.data_loader.stream_parser import _extract_time_info
+        from npu_mfu_analyzer.data_loader.stream_parser import _extract_time_info
 
         event = {
             "name": "test_event",

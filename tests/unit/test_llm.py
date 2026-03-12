@@ -10,7 +10,7 @@ class TestLLMInterface:
     
     def test_message_to_dict(self):
         """测试消息转换"""
-        from src.llm.llm_interface import Message
+        from npu_mfu_analyzer.llm.llm_interface import Message
         
         msg = Message(role="user", content="Hello")
         d = msg.to_dict()
@@ -20,7 +20,7 @@ class TestLLMInterface:
     
     def test_llm_config_default(self):
         """测试默认配置"""
-        from src.llm.llm_interface import LLMConfig
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig
         
         config = LLMConfig()
         
@@ -30,7 +30,7 @@ class TestLLMInterface:
     
     def test_llm_factory_create_mock(self):
         """测试创建 Mock 后端"""
-        from src.llm.llm_interface import LLMConfig, LLMFactory, MockBackend
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory, MockBackend
         
         config = LLMConfig(backend="mock")
         llm = LLMFactory.create(config)
@@ -39,7 +39,7 @@ class TestLLMInterface:
     
     def test_llm_factory_invalid_backend(self):
         """测试无效后端"""
-        from src.llm.llm_interface import LLMConfig, LLMFactory
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory
         
         config = LLMConfig(backend="invalid")
         
@@ -49,7 +49,7 @@ class TestLLMInterface:
     @pytest.mark.asyncio
     async def test_mock_backend_complete(self):
         """测试 Mock 后端响应"""
-        from src.llm.llm_interface import LLMConfig, LLMFactory, Message
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory, Message
         
         config = LLMConfig(backend="mock")
         llm = LLMFactory.create(config)
@@ -67,7 +67,7 @@ class TestPrompts:
     
     def test_system_prompts_exist(self):
         """测试系统 Prompt 存在"""
-        from src.llm.prompts import (
+        from npu_mfu_analyzer.llm.prompts import (
             PERFORMANCE_EXPERT_SYSTEM,
             TIMELINE_ANALYSIS_SYSTEM,
             MFU_ANALYSIS_SYSTEM,

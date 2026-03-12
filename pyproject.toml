@@ -1,12 +1,49 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "npu-mfu-analyzer"
-version = "0.1.0"
-description = "昇腾 NPU 大模型训练 MFU 智能分析工具"
+version = "0.5.0"
+description = "NPU MFU Analyzer - LLM Training Performance Analysis Tool for Ascend NPU"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.9,<3.15"
-license = {text = "Apache-2.0"}
 authors = [
-    {name = "NPU MFU Analyzer Team"}
+    {name = "NPU MFU Analyzer Team", email = "lishanni513@gmail.com"}
+]
+maintainers = [
+    {name = "lishanni", email = "lishanni513@gmail.com"}
+]
+keywords = [
+    "npu",
+    "ascend",
+    "huawei-ascend",
+    "mfu",
+    "model-flops-utilization",
+    "llm-training",
+    "performance-analysis",
+    "profiling",
+    "deep-learning",
+    "pytorch",
+    "distributed-training",
+    "ai-infrastructure",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: System :: Benchmark",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 
 dependencies = [
@@ -49,6 +86,9 @@ langchain = [
 claude = [
     "anthropic>=0.18.0",
 ]
+deepseek = [
+    "openai>=1.0.0",
+]
 dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
@@ -56,21 +96,28 @@ dev = [
     "pytest-mock>=3.12.0",
     "ruff>=0.1.0",
     "mypy>=1.8.0",
+    "build>=1.0.0",
+    "twine>=5.0.0",
 ]
 all = [
     "npu-mfu-analyzer[web,local-llm,langchain,claude,dev]",
 ]
 
 [project.scripts]
-npu-analyzer = "src.cli.main:cli"
+npu-analyzer = "npu_mfu_analyzer.cli.main:cli"
 
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+[project.urls]
+Homepage = "https://github.com/lishanni/npu-mfu-analyzer"
+Documentation = "https://github.com/lishanni/npu-mfu-analyzer#readme"
+Repository = "https://github.com/lishanni/npu-mfu-analyzer.git"
+Issues = "https://github.com/lishanni/npu-mfu-analyzer/issues"
+Changelog = "https://github.com/lishanni/npu-mfu-analyzer/blob/master/CHANGELOG.md"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+where = ["src"]
 
 [tool.ruff]
 line-length = 120

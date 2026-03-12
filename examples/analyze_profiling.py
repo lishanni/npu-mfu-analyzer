@@ -12,10 +12,10 @@ from pathlib import Path
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_loader import ProfilingLoader
-from src.analyzers import OverlapCalculator, SlowRankDetector, MFUCalculator
-from src.hardware import detect_hardware
-from src.pattern_matcher import UniversalPatternMatcher
+from npu_mfu_analyzer.data_loader import ProfilingLoader
+from npu_mfu_analyzer.analyzers import OverlapCalculator, SlowRankDetector, MFUCalculator
+from npu_mfu_analyzer.hardware import detect_hardware
+from npu_mfu_analyzer.pattern_matcher import UniversalPatternMatcher
 
 
 def main(profiling_path: str):

@@ -11,7 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.skills import (
+from npu_mfu_analyzer.skills import (
     SkillEngine,
     get_engine,
     get_registry,
@@ -19,8 +19,8 @@ from src.skills import (
     SkillResult,
     LogicChain,
 )
-from src.skills.python_skills import register_all_skills
-from src.skills.prompts import register_all_prompt_skills
+from npu_mfu_analyzer.skills.python_skills import register_all_skills
+from npu_mfu_analyzer.skills.prompts import register_all_prompt_skills
 
 
 def test_skill_registration():

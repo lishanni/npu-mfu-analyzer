@@ -12,7 +12,7 @@ class TestOverlapCalculator:
     
     def test_calculate_from_events_empty(self):
         """空事件列表"""
-        from src.analyzers import OverlapCalculator
+        from npu_mfu_analyzer.analyzers import OverlapCalculator
         
         calc = OverlapCalculator()
         metrics = calc.calculate_from_events([], [])
@@ -23,7 +23,7 @@ class TestOverlapCalculator:
     
     def test_calculate_from_events_no_overlap(self):
         """无重叠的情况"""
-        from src.analyzers import OverlapCalculator
+        from npu_mfu_analyzer.analyzers import OverlapCalculator
         
         calc = OverlapCalculator()
         compute_events = [{"ts": 0, "dur": 100}]
@@ -38,7 +38,7 @@ class TestOverlapCalculator:
     
     def test_calculate_from_events_full_overlap(self):
         """完全重叠的情况"""
-        from src.analyzers import OverlapCalculator
+        from npu_mfu_analyzer.analyzers import OverlapCalculator
         
         calc = OverlapCalculator()
         # 计算事件完全覆盖通信事件
@@ -54,7 +54,7 @@ class TestOverlapCalculator:
     
     def test_calculate_from_step_trace(self):
         """从 step_trace 行计算"""
-        from src.analyzers import OverlapCalculator
+        from npu_mfu_analyzer.analyzers import OverlapCalculator
         
         calc = OverlapCalculator()
         row = {
@@ -75,7 +75,7 @@ class TestOverlapCalculator:
     
     def test_overlap_metrics_to_prompt(self):
         """指标转 Prompt 文本"""
-        from src.analyzers import OverlapMetrics
+        from npu_mfu_analyzer.analyzers import OverlapMetrics
         
         metrics = OverlapMetrics(
             total_compute_time=1000000,  # 1000ms
@@ -98,7 +98,7 @@ class TestSlowRankDetector:
     
     def test_judge_dixon_no_outlier(self):
         """Dixon 检验 - 无异常值"""
-        from src.analyzers import judge_dixon
+        from npu_mfu_analyzer.analyzers import judge_dixon
         
         time_list = [100, 101, 99, 102, 100]
         result = judge_dixon(time_list)
@@ -107,7 +107,7 @@ class TestSlowRankDetector:
     
     def test_judge_dixon_with_outlier(self):
         """Dixon 检验 - 有异常值"""
-        from src.analyzers import judge_dixon
+        from npu_mfu_analyzer.analyzers import judge_dixon
         
         time_list = [100, 101, 99, 102, 50]  # 50 明显异常
         result = judge_dixon(time_list)
@@ -116,7 +116,7 @@ class TestSlowRankDetector:
     
     def test_judge_norm_no_outlier(self):
         """三倍标准差 - 无异常值"""
-        from src.analyzers import judge_norm
+        from npu_mfu_analyzer.analyzers import judge_norm
         
         # 正态分布数据
         np.random.seed(42)
@@ -128,7 +128,7 @@ class TestSlowRankDetector:
     
     def test_judge_slow_rank_auto_select(self):
         """自动选择检验方法"""
-        from src.analyzers import judge_slow_rank
+        from npu_mfu_analyzer.analyzers import judge_slow_rank
         
         # 小样本用 Dixon
         small_list = [100, 101, 99, 50]
@@ -137,7 +137,7 @@ class TestSlowRankDetector:
     
     def test_slow_rank_detector_from_df(self):
         """从 DataFrame 检测慢卡"""
-        from src.analyzers import SlowRankDetector
+        from npu_mfu_analyzer.analyzers import SlowRankDetector
         
         detector = SlowRankDetector()
         
@@ -158,7 +158,7 @@ class TestBubbleAnalyzer:
     
     def test_analyze_empty_df(self):
         """空 DataFrame"""
-        from src.analyzers import BubbleAnalyzer
+        from npu_mfu_analyzer.analyzers import BubbleAnalyzer
         
         analyzer = BubbleAnalyzer(pp_size=4, micro_batches=8)
         df = pd.DataFrame()
@@ -169,7 +169,7 @@ class TestBubbleAnalyzer:
     
     def test_calculate_ideal_bubble(self):
         """计算理论 Bubble 比例"""
-        from src.analyzers import BubbleMetrics
+        from npu_mfu_analyzer.analyzers import BubbleMetrics
         
         metrics = BubbleMetrics(pp_size=4, micro_batches=8)
         ideal = metrics.calculate_ideal_bubble()
@@ -179,7 +179,7 @@ class TestBubbleAnalyzer:
     
     def test_analyze_from_step_trace(self):
         """从 step_trace 分析"""
-        from src.analyzers import BubbleAnalyzer
+        from npu_mfu_analyzer.analyzers import BubbleAnalyzer
         
         analyzer = BubbleAnalyzer(pp_size=4, micro_batches=8)
         
@@ -196,7 +196,7 @@ class TestBubbleAnalyzer:
     
     def test_suggest_optimization(self):
         """优化建议生成"""
-        from src.analyzers import BubbleAnalyzer, BubbleMetrics
+        from npu_mfu_analyzer.analyzers import BubbleAnalyzer, BubbleMetrics
         
         analyzer = BubbleAnalyzer(pp_size=4, micro_batches=4)
         
@@ -220,7 +220,7 @@ class TestCommunicationSplitter:
     
     def test_split_empty_events(self):
         """空事件列表"""
-        from src.analyzers import CommunicationSplitter
+        from npu_mfu_analyzer.analyzers import CommunicationSplitter
         
         splitter = CommunicationSplitter()
         result = splitter.split_from_events([])
@@ -229,7 +229,7 @@ class TestCommunicationSplitter:
     
     def test_split_by_group_name(self):
         """按通信域名称拆分"""
-        from src.analyzers import CommunicationSplitter
+        from npu_mfu_analyzer.analyzers import CommunicationSplitter
         
         splitter = CommunicationSplitter()
         
@@ -248,7 +248,7 @@ class TestCommunicationSplitter:
     
     def test_split_by_op_type(self):
         """按算子类型拆分"""
-        from src.analyzers import CommunicationSplitter
+        from npu_mfu_analyzer.analyzers import CommunicationSplitter
         
         splitter = CommunicationSplitter()
         
@@ -265,7 +265,7 @@ class TestCommunicationSplitter:
     
     def test_compute_ratios(self):
         """计算占比"""
-        from src.analyzers import CommSplitResult
+        from npu_mfu_analyzer.analyzers import CommSplitResult
         
         result = CommSplitResult(
             tp_comm_time=50,
@@ -282,7 +282,7 @@ class TestCommunicationSplitter:
     
     def test_parallel_config(self):
         """并行配置"""
-        from src.analyzers import ParallelConfig
+        from npu_mfu_analyzer.analyzers import ParallelConfig
         
         config = ParallelConfig.from_dict({
             "world_size": 64,

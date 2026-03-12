@@ -11,8 +11,8 @@ from pathlib import Path
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_loader.profiling_loader import ProfilingLoader
-from src.data_loader.aic_metrics import AICMetrics
+from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
+from npu_mfu_analyzer.data_loader.aic_metrics import AICMetrics
 from examples.create_mock_aic_data import create_mock_aic_metrics
 
 
@@ -68,7 +68,7 @@ def verify_aic_metrics_parsing():
     print("=" * 60)
 
     # 导入瓶颈判断常量
-    from src.data_loader.aic_metrics import (
+    from npu_mfu_analyzer.data_loader.aic_metrics import (
         CRITICAL_THRESHOLD,
         HIGH_THRESHOLD,
         BOTTLENECK_COMPUTE,

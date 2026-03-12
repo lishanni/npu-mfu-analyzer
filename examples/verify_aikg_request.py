@@ -16,10 +16,10 @@ from datetime import datetime
 # 添加项目路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.data_loader.profiling_loader import ProfilingLoader
-from src.agents.detailed_operator_agent import DetailedOperatorAgent, DetailedOperatorAnalysisData
-from src.agents.aikg_integration import AIKGRequestConverter, AIKGRequest
-from src.agents.fusion_rules import FusionOpportunity
+from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
+from npu_mfu_analyzer.agents.detailed_operator_agent import DetailedOperatorAgent, DetailedOperatorAnalysisData
+from npu_mfu_analyzer.agents.aikg_integration import AIKGRequestConverter, AIKGRequest
+from npu_mfu_analyzer.agents.fusion_rules import FusionOpportunity
 from examples.create_mock_aic_data import create_mock_aic_metrics
 
 
@@ -104,7 +104,7 @@ def main():
         stall_rate = metrics.pipeline.stall_rate if metrics.pipeline else 0.0
 
         # 识别瓶颈
-        from src.data_loader.aic_metrics import (
+        from npu_mfu_analyzer.data_loader.aic_metrics import (
             CRITICAL_THRESHOLD,
             HIGH_THRESHOLD,
             BOTTLENECK_COMPUTE,

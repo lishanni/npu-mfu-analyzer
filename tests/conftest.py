@@ -100,7 +100,7 @@ def mock_step_trace_data():
 @pytest.fixture
 def mock_llm_backend():
     """模拟 LLM 后端"""
-    from src.llm import MockBackend
+    from npu_mfu_analyzer.llm import MockBackend
     return MockBackend()
 
 
@@ -111,7 +111,7 @@ def mock_llm_backend():
 @pytest.fixture
 def atlas_a2_spec():
     """Atlas A2 硬件规格"""
-    from src.hardware import get_registry
+    from npu_mfu_analyzer.hardware import get_registry
     registry = get_registry()
     return registry.get_spec("Atlas A2", "280T")
 
