@@ -2,8 +2,16 @@
 
 **昇腾 NPU 大模型训练 MFU 智能分析与优化工具**
 
+[![GitHub stars](https://img.shields.io/github/stars/lishanni/npu-mfu-analyzer?style=social)](https://github.com/lishanni/npu-mfu-analyzer/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/lishanni/npu-mfu-analyzer?style=social)](https://github.com/lishanni/npu-mfu-analyzer/network/members)
+[![GitHub watchers](https://img.shields.io/github/watchers/lishanni/npu-mfu-analyzer?style=social)](https://github.com/lishanni/npu-mfu-analyzer/watchers)
+
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
+[![Ascend](https://img.shields.io/badge/NPU-Ascend%20A2%2F300I-red)](https://www.hiascend.com/)
+[![LLM](https://img.shields.io/badge/LLM-Claude%20%7C%20GPT%20%7C%20DeepSeek%20%7C%20Ollama-purple)](https://github.com/lishanni/npu-mfu-analyzer)
+[![MFU Analysis](https://img.shields.io/badge/MFU-Performance%20Analyzer-orange)](https://github.com/lishanni/npu-mfu-analyzer)
+[![Multi-Agent](https://img.shields.io/badge/Architecture-Multi--Agent-blueviolet)](https://github.com/lishanni/npu-mfu-analyzer)
 
 ## 概述
 
