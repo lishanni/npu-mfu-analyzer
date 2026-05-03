@@ -570,8 +570,14 @@ class MemoryAgent(BaseAgent):
 
             details = {
                 "peak_memory_gb": peak_gb,
+                "peak_memory_mb": metrics.peak_memory_mb if metrics else 0,
                 "memory_utilization": metrics.memory_utilization if metrics else 0,
                 "oom_risk": oom_risk,
+                "model_memory_mb": metrics.model_memory_mb if metrics else 0,
+                "optimizer_memory_mb": metrics.optimizer_memory_mb if metrics else 0,
+                "activation_memory_mb": metrics.activation_memory_mb if metrics else 0,
+                "gradient_memory_mb": metrics.gradient_memory_mb if metrics else 0,
+                "training_hints": data.get("training_hints", {}),
             }
 
             # 添加泄漏检测结果
@@ -682,6 +688,9 @@ class MemoryAgent(BaseAgent):
                         operator_name=event_data.get("operator_name", ""),
                     )
                     analysis_data.memory_events.append(event)
+
+        if "memory_timeline" in data and isinstance(data["memory_timeline"], list):
+            analysis_data.memory_timeline = data["memory_timeline"]
 
         return analysis_data
 

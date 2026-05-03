@@ -360,8 +360,17 @@ class Orchestrator:
             has_aic_metrics = self._check_aic_metrics_available()
 
             # 4. 准备 Agent 数据
-            agent_data = profiling_summary.to_dict()
-            agent_data["profiling_path"] = self.profiling_path
+            step_trace_df = self.loader.get_step_trace()
+            comm_df = self.loader.get_communication_data()
+            overlap_events = self.loader.get_overlap_events()
+            agent_data = self._build_agent_data(
+                profiling_summary=profiling_summary,
+                info=info,
+                step_trace_df=step_trace_df,
+                comm_df=comm_df,
+                overlap_events=overlap_events,
+                comm_matrix=comm_matrix,
+            )
 
             # 如果有 AIC metrics，添加 top operators 用于详细分析
             if has_aic_metrics:
@@ -374,7 +383,7 @@ class Orchestrator:
             agent_results = await self._run_agents(agent_data)
 
             # 6. 使用 Advisor Agent 生成综合分析
-            advisor_result = await self._run_advisor(profiling_summary, agent_results)
+            advisor_result = await self._run_advisor(profiling_summary, agent_results, agent_data)
 
             # 5. 生成最终报告
             final_report = self.report_generator.generate_from_analysis(
@@ -426,14 +435,14 @@ class Orchestrator:
     async def _run_advisor(
         self, 
         summary: ProfilingSummary, 
-        agent_results: Dict[str, AnalysisResult]
+        agent_results: Dict[str, AnalysisResult],
+        agent_data: Optional[Dict[str, Any]] = None,
     ) -> AnalysisResult:
         """运行 Advisor Agent 生成综合分析"""
         try:
-            advisor_data = {
-                "profiling_summary": summary,
-                "agent_results": agent_results,
-            }
+            advisor_data = dict(agent_data or {})
+            advisor_data["profiling_summary"] = summary
+            advisor_data["agent_results"] = agent_results
             result = await self.advisor.analyze(advisor_data)
             return result
         except Exception as e:
@@ -444,6 +453,64 @@ class Orchestrator:
                 summary="综合分析失败",
                 error=str(e)
             )
+
+    def _build_agent_data(
+        self,
+        profiling_summary: ProfilingSummary,
+        info,
+        step_trace_df=None,
+        comm_df=None,
+        overlap_events: Optional[Dict[str, Any]] = None,
+        comm_matrix: Optional[CommunicationMatrix] = None,
+    ) -> Dict[str, Any]:
+        """构造 richer agent payload，避免各 agent 只看到极简 summary。"""
+        agent_data = profiling_summary.to_dict()
+        agent_data["profiling_summary"] = profiling_summary
+        agent_data["profiling_path"] = self.profiling_path
+        agent_data["world_size"] = info.rank_count
+        agent_data["rank_count"] = info.rank_count
+        agent_data["total_step_time_ms"] = profiling_summary.avg_step_time / 1000 if profiling_summary.avg_step_time else 0
+        agent_data["total_comm_time_ms"] = profiling_summary.avg_comm_time / 1000 if profiling_summary.avg_comm_time else 0
+        agent_data["comm_ratio"] = profiling_summary.comm_ratio
+        agent_data["device_memory_gb"] = profiling_summary.device_memory_gb
+        agent_data["training_hints"] = profiling_summary.training_hints
+
+        if getattr(step_trace_df, "empty", True) is False:
+            agent_data["step_trace_df"] = step_trace_df
+        if getattr(comm_df, "empty", True) is False:
+            agent_data["comm_df"] = comm_df
+        if overlap_events:
+            agent_data["compute_events"] = overlap_events.get("compute", [])
+            agent_data["comm_events"] = overlap_events.get("hccl", []) or overlap_events.get("comm_not_overlap", [])
+
+        tp_size = self.config.get("tp_size", self.config.get("tensor_parallel_size"))
+        pp_size = self.config.get("pp_size", self.config.get("pipeline_parallel_size"))
+        dp_size = self.config.get("dp_size", self.config.get("data_parallel_size"))
+        if tp_size:
+            agent_data["tp_size"] = tp_size
+        if pp_size:
+            agent_data["pp_size"] = pp_size
+        if dp_size:
+            agent_data["dp_size"] = dp_size
+
+        topology_summary = self._build_topology_summary(comm_matrix)
+        if topology_summary:
+            agent_data["topology_summary"] = topology_summary
+
+        return agent_data
+
+    def _build_topology_summary(self, comm_matrix: Optional[CommunicationMatrix]) -> Dict[str, Any]:
+        if not comm_matrix:
+            return {}
+        return {
+            "num_machines": comm_matrix.num_machines,
+            "npus_per_machine": comm_matrix.npus_per_machine,
+            "intra_node_ratio": comm_matrix.intra_node_ratio,
+            "inter_node_ratio": comm_matrix.inter_node_ratio,
+            "avg_bandwidth_gbps": comm_matrix.avg_bandwidth_gbps,
+            "slow_links_count": len(comm_matrix.slow_links),
+            "bottleneck_links_count": len(comm_matrix.bottleneck_links),
+        }
     
     async def _run_agents(self, data: Dict[str, Any]) -> Dict[str, AnalysisResult]:
         """

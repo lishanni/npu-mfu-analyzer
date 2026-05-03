@@ -229,6 +229,13 @@ class CommunicationAgent(BaseAgent):
                     "dp_comm_time_ms": comm_split.dp_comm_time / 1000,
                 })
             
+            if metrics and metrics.parallel_config:
+                details.update({
+                    "tp_size": metrics.parallel_config.tensor_parallel_size,
+                    "pp_size": metrics.parallel_config.pipeline_parallel_size,
+                    "dp_size": metrics.parallel_config.data_parallel_size,
+                })
+            
             slow_ranks = []
             if metrics and metrics.slow_rank_result:
                 slow_ranks = metrics.slow_rank_result.get_all_slow_ranks()
