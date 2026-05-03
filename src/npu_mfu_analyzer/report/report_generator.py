@@ -175,6 +175,7 @@ class ReportGenerator:
         
         # 提取建议
         suggestions = []
+        diagnosis = {}
         if advisor_report and hasattr(advisor_report, "suggestions"):
             for s in advisor_report.suggestions:
                 if hasattr(s, "title"):
@@ -185,6 +186,8 @@ class ReportGenerator:
                         "expected_benefit": s.expected_benefit,
                         "code_example": s.code_example,
                     })
+        if advisor_report and hasattr(advisor_report, "diagnosis"):
+            diagnosis = advisor_report.diagnosis or {}
         
         # 构建 ReportData
         report_data = ReportData(
@@ -213,6 +216,12 @@ class ReportGenerator:
             communication_analysis=communication_analysis if communication_analysis else "",
             jitter_analysis=jitter_analysis if jitter_analysis else "",
             suggestions=suggestions,
+            diagnosis_main_contradiction=diagnosis.get("main_contradiction", {}),
+            diagnosis_observation_facts=diagnosis.get("observation_facts", []),
+            diagnosis_prioritized_actions=diagnosis.get("prioritized_actions", []),
+            diagnosis_experiments=diagnosis.get("experiments", []),
+            diagnosis_phase_focus=diagnosis.get("phase_focus", ""),
+            diagnosis_training_scenario=diagnosis.get("training_scenario", ""),
             # 通信矩阵数据
             total_comm_data_mb=communication_matrix.total_comm_data_mb if communication_matrix else 0.0,
             total_comm_time_ms=communication_matrix.total_comm_time_ms if communication_matrix else 0.0,
@@ -276,6 +285,12 @@ class ReportGenerator:
             communication_analysis=data.get("communication_analysis", ""),
             jitter_analysis=data.get("jitter_analysis", ""),
             suggestions=data.get("suggestions", []),
+            diagnosis_main_contradiction=data.get("diagnosis_main_contradiction", {}),
+            diagnosis_observation_facts=data.get("diagnosis_observation_facts", []),
+            diagnosis_prioritized_actions=data.get("diagnosis_prioritized_actions", []),
+            diagnosis_experiments=data.get("diagnosis_experiments", []),
+            diagnosis_phase_focus=data.get("diagnosis_phase_focus", ""),
+            diagnosis_training_scenario=data.get("diagnosis_training_scenario", ""),
         )
     
     def _generate_text(self, data: ReportData) -> str:

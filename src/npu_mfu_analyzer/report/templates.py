@@ -61,12 +61,26 @@ class ReportData:
 
     # 建议
     suggestions: List[Dict[str, Any]] = None
+    diagnosis_main_contradiction: Dict[str, Any] = None
+    diagnosis_observation_facts: List[str] = None
+    diagnosis_prioritized_actions: List[Dict[str, Any]] = None
+    diagnosis_experiments: List[Dict[str, Any]] = None
+    diagnosis_phase_focus: str = ""
+    diagnosis_training_scenario: str = ""
 
     def __post_init__(self):
         if not self.generated_at:
             self.generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         if self.suggestions is None:
             self.suggestions = []
+        if self.diagnosis_main_contradiction is None:
+            self.diagnosis_main_contradiction = {}
+        if self.diagnosis_observation_facts is None:
+            self.diagnosis_observation_facts = []
+        if self.diagnosis_prioritized_actions is None:
+            self.diagnosis_prioritized_actions = []
+        if self.diagnosis_experiments is None:
+            self.diagnosis_experiments = []
 
     def _get_bound_type_name(self) -> str:
         """获取受限类型中文名"""
@@ -120,49 +134,55 @@ class MarkdownTemplate:
 
 ---
 
-## 2. 详细分析
+## 2. 结构化诊断
 
-### 2.1 Timeline 分析
+{diagnosis_section}
+
+---
+
+## 3. 详细分析
+
+### 3.1 Timeline 分析
 
 {timeline_analysis}
 
-### 2.2 算子分析
+### 3.2 算子分析
 
 {operator_analysis}
 
-### 2.3 内存分析
+### 3.3 内存分析
 
 {memory_analysis}
 
-### 2.4 通信分析
+### 3.4 通信分析
 
 {communication_analysis}
 {comm_matrix_section}
 
-### 2.5 抖动分析
+### 3.5 抖动分析
 
 {jitter_analysis}
 
-### 2.6 深度算子分析 (V2)
+### 3.6 深度算子分析 (V2)
 
 {deep_operator_analysis}
 
 ---
 
-## 3. 优化建议
+## 4. 优化建议
 
 {suggestions_section}
 
 ---
 
-## 4. 附录
+## 5. 附录
 
-### 4.1 数据来源
+### 5.1 数据来源
 
 - Profiling 工具: msprof
 - 分析工具: npu-mfu-analyzer
 
-### 4.2 术语解释
+### 5.2 术语解释
 
 | 术语 | 说明 |
 |------|------|
@@ -191,6 +211,7 @@ class MarkdownTemplate:
 
         # 生成建议部分
         suggestions_section = cls._render_suggestions(data.suggestions)
+        diagnosis_section = cls._render_diagnosis(data)
 
         # 生成 Roofline 分析部分
         roofline_section = cls._render_roofline(data)
@@ -217,6 +238,7 @@ class MarkdownTemplate:
             idle_pct=data.idle_ratio * 100,
             main_bottleneck=data.main_bottleneck or "无明显瓶颈",
             bottleneck_impact=data.bottleneck_impact,
+            diagnosis_section=diagnosis_section,
             timeline_analysis=data.timeline_analysis or "暂无分析数据",
             operator_analysis=data.operator_analysis or "暂无分析数据",
             memory_analysis=data.memory_analysis or "暂无分析数据",
@@ -226,6 +248,58 @@ class MarkdownTemplate:
             deep_operator_analysis=data.deep_operator_analysis or "暂无分析数据",
             suggestions_section=suggestions_section,
         )
+
+    @classmethod
+    def _render_diagnosis(cls, data: ReportData) -> str:
+        main = data.diagnosis_main_contradiction or {}
+        facts = data.diagnosis_observation_facts or []
+        actions = data.diagnosis_prioritized_actions or []
+        experiments = data.diagnosis_experiments or []
+
+        if not main and not facts and not actions and not experiments:
+            return "暂无结构化诊断结果。"
+
+        lines = []
+        if main:
+            lines.append(f"- **主矛盾**: {main.get('code', 'unknown')}")
+            lines.append(f"- **所属层**: {main.get('layer', 'unknown')}")
+            if main.get("reason"):
+                lines.append(f"- **判断理由**: {main.get('reason')}")
+            if "confidence" in main:
+                lines.append(f"- **置信度**: {float(main.get('confidence', 0))*100:.0f}%")
+        if data.diagnosis_phase_focus:
+            lines.append(f"- **阶段焦点**: {data.diagnosis_phase_focus}")
+        if data.diagnosis_training_scenario:
+            lines.append(f"- **训练场景**: {data.diagnosis_training_scenario}")
+
+        if facts:
+            lines.extend(["", "### 关键观测", ""])
+            for fact in facts:
+                lines.append(f"- {fact}")
+
+        if actions:
+            lines.extend(["", "### 优先动作", ""])
+            for idx, action in enumerate(actions, 1):
+                lines.append(f"{idx}. **{action.get('title', action.get('action_code', 'action'))}**")
+                if action.get("description"):
+                    lines.append(f"   - 动作: {action['description']}")
+                if action.get("expected_effect"):
+                    lines.append(f"   - 预期效果: {action['expected_effect']}")
+                if action.get("rationale"):
+                    lines.append(f"   - 原因: {action['rationale']}")
+
+        if experiments:
+            lines.extend(["", "### 建议实验", ""])
+            for idx, item in enumerate(experiments, 1):
+                lines.append(f"{idx}. **{item.get('title', 'experiment')}**")
+                if item.get("goal"):
+                    lines.append(f"   - 目标: {item['goal']}")
+                if item.get("hypothesis"):
+                    lines.append(f"   - 假设: {item['hypothesis']}")
+                if item.get("expected_signal"):
+                    lines.append(f"   - 预期信号: {item['expected_signal']}")
+
+        return "\n".join(lines)
 
     @classmethod
     def _render_comm_matrix(cls, data: ReportData) -> str:
