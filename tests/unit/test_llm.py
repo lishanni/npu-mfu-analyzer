@@ -36,6 +36,14 @@ class TestLLMInterface:
         llm = LLMFactory.create(config)
         
         assert isinstance(llm, MockBackend)
+
+    def test_claude_default_model_is_glm(self):
+        """测试 claude 后端默认模型映射到 GLM-4.7"""
+        from src.llm.llm_interface import LLMConfig
+
+        config = LLMConfig(backend="claude")
+
+        assert config.model == "GLM-4.7"
     
     def test_llm_factory_invalid_backend(self):
         """测试无效后端"""

@@ -309,10 +309,25 @@ class AdvisorAgent(BaseAgent):
             )
         except Exception as e:
             logger.error(f"Advisor analysis failed: {e}", exc_info=True)
+            diagnosis_results = locals().get("diagnosis_results", {})
+            rule_suggestions = locals().get("rule_suggestions", [])
+            fallback_report = self._build_report(data, "", rule_suggestions, diagnosis_results)
             return AnalysisResult(
                 agent_name=self.name,
-                success=False,
-                summary="综合分析失败",
+                success=True,
+                summary="综合分析完成（LLM 调用失败，已回退为结构化诊断结果）",
+                details={
+                    "estimated_mfu": fallback_report.overview.estimated_mfu,
+                    "main_bottleneck": fallback_report.overview.main_bottleneck,
+                    "suggestion_count": len(fallback_report.suggestions),
+                    "high_priority_count": len([s for s in fallback_report.suggestions if s.priority == Priority.HIGH]),
+                    "advisor_report": fallback_report,
+                    "diagnosis": fallback_report.diagnosis,
+                    "llm_fallback": True,
+                    "llm_error": str(e),
+                },
+                recommendations=[s.title for s in fallback_report.suggestions],
+                raw_response=fallback_report.to_markdown(),
                 error=str(e),
             )
 

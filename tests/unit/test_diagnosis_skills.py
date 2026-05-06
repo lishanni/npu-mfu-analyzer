@@ -2,7 +2,7 @@ import pytest
 
 from npu_mfu_analyzer.agents.base_agent import AnalysisResult
 from npu_mfu_analyzer.agents.advisor_agent import AdvisorAgent
-from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory
+from npu_mfu_analyzer.llm.llm_interface import LLMConfig, LLMFactory, LLMInterface, LLMResponse
 from npu_mfu_analyzer.skills.v2.base import SkillContext
 from npu_mfu_analyzer.skills.v2.engine import SkillEngine
 from npu_mfu_analyzer.skills.v2.registry import SkillRegistry
@@ -381,3 +381,81 @@ async def test_advisor_agent_includes_phase2_to_4_outputs():
     assert diagnosis["experiments"]
     assert diagnosis["regression_template"]
     assert result.details["advisor_report"] is not None
+
+
+class FailingLLM(LLMInterface):
+    async def complete(self, messages, **kwargs) -> LLMResponse:
+        raise RuntimeError("forced llm failure")
+
+
+@pytest.mark.asyncio
+async def test_advisor_agent_falls_back_to_structured_diagnosis_when_llm_fails():
+    advisor = AdvisorAgent(FailingLLM(LLMConfig(backend="mock")))
+    data = {
+        "profiling_summary": {
+            "avg_step_time": 1000.0,
+            "avg_compute_time": 700.0,
+            "avg_comm_time": 120.0,
+            "avg_free_time": 80.0,
+            "activation_memory_mb": 46000,
+            "gradient_memory_mb": 10000,
+            "optimizer_memory_mb": 4000,
+            "model_memory_mb": 6000,
+            "peak_memory_mb": 64000,
+            "rank_count": 8,
+            "world_size": 8,
+            "training_hints": {
+                "activation_pressure_score": 0.85,
+                "state_pressure_score": 0.20,
+                "activation_heavy_likely": True,
+            },
+        },
+        "tp_size": 4,
+        "pp_size": 2,
+        "dp_size": 1,
+        "topology_summary": {
+            "num_machines": 2,
+            "inter_node_ratio": 0.25,
+            "slow_links_count": 1,
+        },
+        "agent_results": {
+            "memory": AnalysisResult(
+                agent_name="memory",
+                success=True,
+                summary="",
+                details={
+                    "peak_memory_gb": 62.5,
+                    "peak_memory_mb": 64000,
+                    "memory_utilization": 96.0,
+                    "oom_risk": "high",
+                    "activation_memory_mb": 46000,
+                    "optimizer_memory_mb": 4000,
+                    "model_memory_mb": 6000,
+                    "gradient_memory_mb": 10000,
+                    "training_hints": {
+                        "activation_pressure_score": 0.85,
+                        "state_pressure_score": 0.20,
+                        "activation_heavy_likely": True,
+                    },
+                },
+            ),
+            "timeline": AnalysisResult(
+                agent_name="timeline",
+                success=True,
+                summary="",
+                details={"overlap_ratio": 68.0, "bubble_ratio": 4.0},
+            ),
+            "communication": AnalysisResult(
+                agent_name="communication",
+                success=True,
+                summary="",
+                details={"comm_ratio": 0.12, "tp_size": 4, "pp_size": 2, "dp_size": 1},
+            ),
+        },
+    }
+    result = await advisor.analyze(data)
+    assert result.success
+    assert result.details["llm_fallback"] is True
+    assert result.details["diagnosis"]["main_contradiction"]["code"] == "ACTIVATION_MEMORY_BOUND"
+    assert "主矛盾" in result.raw_response
+    assert "优先调优动作" in result.raw_response

@@ -483,7 +483,7 @@ class JitterAgent(BaseAgent):
 
             # 7. 生成 Prompt
             data_summary = self._format_data_summary(metrics)
-            prompt = self.format_prompt(self.PROMPT_TEMPLATE, data_summary=data_summary)
+            prompt = self.format_prompt(self.PROMPT_TEMPLATE, **metrics.to_dict())
 
             # 8. 调用 LLM
             response = await self.call_llm(prompt)

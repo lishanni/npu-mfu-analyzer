@@ -27,13 +27,24 @@ class Message:
 class LLMConfig:
     """LLM 配置"""
     backend: str = "openai"
-    model: str = "gpt-4-turbo-preview"
+    model: Optional[str] = None
     temperature: float = 0.1
     max_tokens: int = 4096
     api_key: Optional[str] = None
     base_url: Optional[str] = None
     
     def __post_init__(self):
+        # 后端默认模型
+        if self.model is None:
+            if self.backend == "claude":
+                self.model = "GLM-4.7"
+            elif self.backend == "ollama":
+                self.model = "qwen2.5:7b"
+            elif self.backend == "deepseek":
+                self.model = "deepseek-chat"
+            else:
+                self.model = "gpt-4-turbo-preview"
+
         # 从环境变量获取 API Key
         if self.api_key is None:
             if self.backend == "openai":
