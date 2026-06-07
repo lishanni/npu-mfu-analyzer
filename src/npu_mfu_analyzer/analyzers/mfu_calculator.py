@@ -476,8 +476,10 @@ class MFUCalculator:
     
     def _parse_shapes(self, shapes_str: str) -> List[List[int]]:
         """解析形状字符串"""
+        # 清理引号、方括号等非数字字符
+        cleaned = shapes_str.strip().strip('[]').replace('"', '').replace("'", "")
         shapes = []
-        for shape_part in shapes_str.split(";"):
+        for shape_part in cleaned.split(";"):
             shape_part = shape_part.strip()
             if shape_part:
                 try:

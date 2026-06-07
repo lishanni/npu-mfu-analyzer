@@ -36,6 +36,7 @@ class MainContradictionSkill(BaseSkill):
             dependencies=[
                 "attribute_memory_bottleneck",
                 "diagnose_communication_exposure",
+                "attribute_step_bottleneck",
             ],
         )
 
@@ -46,11 +47,15 @@ class MainContradictionSkill(BaseSkill):
 
             memory_data = memory_result.data if memory_result and memory_result.success else {}
             comm_data = comm_result.data if comm_result and comm_result.success else {}
+            step_result = context.get_previous_result("attribute_step_bottleneck")
+            step_data = step_result.data if step_result and step_result.success else {}
 
             memory_code = memory_data.get("diagnosis_code", "UNKNOWN_MEMORY_PATTERN")
             memory_conf = memory_result.confidence if memory_result else 0.0
             comm_code = comm_data.get("diagnosis_code", "UNKNOWN_COMM_PATTERN")
             comm_conf = comm_result.confidence if comm_result else 0.0
+            step_phase = step_data.get("dominant_step_phase", "unknown")
+            step_conf = step_result.confidence if step_result else 0.0
 
             main = {
                 "code": "INSUFFICIENT_EVIDENCE",
@@ -70,6 +75,15 @@ class MainContradictionSkill(BaseSkill):
                 }
                 supporting_facts.extend(comm_data.get("observation_facts", []))
                 actions = comm_data.get("candidate_actions", [])
+            elif step_phase == "input_host_gap" and step_conf >= 0.55:
+                main = {
+                    "code": "INPUT_HOST_GAP",
+                    "layer": "system_optimization",
+                    "reason": "当前更像 Host 侧输入准备、同步等待或输入预取链路没有藏住，而不是通信主导。",
+                    "confidence": step_conf,
+                }
+                supporting_facts.extend(step_data.get("observation_facts", []))
+                actions = step_data.get("candidate_actions", [])
             elif memory_code in {"ACTIVATION_MEMORY_BOUND", "STATE_MEMORY_BOUND"} and memory_conf >= 0.6:
                 main = {
                     "code": memory_code,

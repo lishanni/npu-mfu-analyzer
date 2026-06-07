@@ -508,12 +508,19 @@ class ProfilingLoader:
                 original_columns = list(df.columns)
                 df.columns = [str(c).strip().lower().replace(' ', '_') for c in df.columns]
 
-                # 查找耗时相关列（支持更多变体，包括带单位的列名）
+                # 查找耗时相关列（优先匹配 duration/dur，避免误匹配 start_time 等 time 列）
                 dur_col = None
+                # 第一轮：优先匹配 duration 或 dur
                 for col in df.columns:
-                    if any(keyword in col for keyword in ["duration", "dur", "time"]):
+                    if any(keyword in col for keyword in ["duration", "dur"]):
                         dur_col = col
                         break
+                # 第二轮：兜底匹配 time（排除 start_time 等非耗时列）
+                if dur_col is None:
+                    for col in df.columns:
+                        if "time" in col and not any(skip in col for skip in ["start", "wait", "end", "launch"]):
+                            dur_col = col
+                            break
 
                 if dur_col is None:
                     logger.debug(f"No duration column found in {csv_file}, columns: {df.columns}")
@@ -726,6 +733,11 @@ class ProfilingLoader:
             if missing_cols:
                 logger.debug(f"Missing columns in kernel_details.csv: {missing_cols}")
                 return []
+
+            # 过滤掉 HCCL 通信算子（hcom_*, hccl_*），只保留计算算子用于 MFU
+            comm_pattern = r'^(hcom_|hccl_|hcom_allreduce|hcom_allgather|hcom_broadcast)'
+            if 'name' in df.columns:
+                df = df[~df['name'].str.match(comm_pattern, case=False, na=False)]
 
             # 按耗时排序，取 top_n
             df_sorted = df.sort_values(by='duration(us)', ascending=False).head(top_n)

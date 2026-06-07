@@ -39,7 +39,7 @@ class TestLLMInterface:
 
     def test_claude_default_model_is_glm(self):
         """测试 claude 后端默认模型映射到 GLM-4.7"""
-        from src.llm.llm_interface import LLMConfig
+        from npu_mfu_analyzer.llm.llm_interface import LLMConfig
 
         config = LLMConfig(backend="claude")
 

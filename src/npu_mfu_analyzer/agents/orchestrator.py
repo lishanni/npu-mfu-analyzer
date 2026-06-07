@@ -371,6 +371,9 @@ class Orchestrator:
                 comm_df=comm_df,
                 overlap_events=overlap_events,
                 comm_matrix=comm_matrix,
+                source_analysis=source_analysis,
+                host_device_chains=host_device_chains,
+                root_cause_findings=root_cause_findings,
             )
 
             # 如果有 AIC metrics，添加 top operators 用于详细分析
@@ -463,6 +466,9 @@ class Orchestrator:
         comm_df=None,
         overlap_events: Optional[Dict[str, Any]] = None,
         comm_matrix: Optional[CommunicationMatrix] = None,
+        source_analysis: Optional[SourceAnalysisResult] = None,
+        host_device_chains: Optional[List[HostDeviceChain]] = None,
+        root_cause_findings: Optional[List[RootCauseFinding]] = None,
     ) -> Dict[str, Any]:
         """构造 richer agent payload，避免各 agent 只看到极简 summary。"""
         agent_data = profiling_summary.to_dict()
@@ -497,6 +503,16 @@ class Orchestrator:
         topology_summary = self._build_topology_summary(comm_matrix)
         if topology_summary:
             agent_data["topology_summary"] = topology_summary
+
+        if source_analysis:
+            agent_data["source_analysis"] = source_analysis.to_dict() if hasattr(source_analysis, "to_dict") else source_analysis
+        if host_device_chains:
+            agent_data["host_device_chains"] = host_device_chains
+        if root_cause_findings:
+            agent_data["root_cause_findings"] = [
+                finding.to_dict() if hasattr(finding, "to_dict") else finding
+                for finding in root_cause_findings
+            ]
 
         return agent_data
 

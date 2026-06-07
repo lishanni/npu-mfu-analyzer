@@ -306,6 +306,79 @@ def test_moe_scenario_prioritizes_ep_balance():
     assert "tune_ep_load_balance" in action_codes
 
 
+def test_input_host_gap_requires_host_evidence_and_yields_explicit_actions():
+    engine = _build_engine()
+    context = SkillContext(
+        profiling_summary={
+            "avg_step_time": 1000.0,
+            "avg_compute_time": 120.0,
+            "avg_comm_time": 150.0,
+            "avg_free_time": 730.0,
+            "comm_ratio": 0.15,
+            "training_hints": {},
+        },
+        host_device_chains=[
+            {
+                "source_type": "dataloader",
+                "torch_op_name": "DataLoader::_next_data",
+                "device_op_name": "MemcpyAsync",
+            },
+            {
+                "source_type": "dataloader",
+                "torch_op_name": "collate_fn",
+                "device_op_name": "MemcpyAsync",
+            },
+            {
+                "source_type": "distributed",
+                "torch_op_name": "all_reduce",
+                "device_op_name": "HcomAllReduce",
+            },
+        ],
+        user_inputs={
+            "source_analysis": {
+                "potential_issues": [
+                    "检测到 Host-Device 数据拷贝和 prefetch 相关热点，建议检查数据加载链路"
+                ]
+            },
+            "root_cause_findings": [
+                {
+                    "rule_name": "host_input_gap",
+                    "root_cause": "Host 侧数据准备和输入拷贝晚于计算消费点",
+                    "evidence": ["DataLoader/prefetch 栈频繁出现", "Host-Device copy 与空闲区间重叠不足"],
+                    "optimization_suggestions": ["检查 dataloader worker / pin_memory / prefetch 配置"],
+                }
+            ],
+            "agent_results": {
+                "memory": AnalysisResult(
+                    agent_name="memory",
+                    success=True,
+                    summary="",
+                    details={"oom_risk": "low", "peak_memory_mb": 12000},
+                ),
+                "timeline": AnalysisResult(
+                    agent_name="timeline",
+                    success=True,
+                    summary="",
+                    details={"overlap_ratio": 10.0, "bubble_ratio": 0.0},
+                ),
+                "communication": AnalysisResult(
+                    agent_name="communication",
+                    success=True,
+                    summary="",
+                    details={"comm_ratio": 0.15},
+                ),
+            },
+        },
+    )
+    results = engine.execute_skills(["prioritize_optimization_actions"], context)
+    plan = results["prioritize_optimization_actions"].data
+    action_codes = [a["action_code"] for a in plan["prioritized_actions"]]
+    assert plan["main_contradiction"]["code"] == "INPUT_HOST_GAP"
+    assert plan["phase_focus"] == "input_host_gap"
+    assert "inspect_dataloader_and_prefetch" in action_codes
+    assert any("Host-Device 调用链中数据加载/预取来源占比" in fact for fact in plan["supporting_facts"])
+
+
 @pytest.mark.asyncio
 async def test_advisor_agent_includes_phase2_to_4_outputs():
     llm = LLMFactory.create(LLMConfig(backend="mock"))

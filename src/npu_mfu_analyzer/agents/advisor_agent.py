@@ -347,6 +347,7 @@ class AdvisorAgent(BaseAgent):
             engine = SkillEngine(registry)
             context = SkillContext(
                 profiling_summary=data.get("profiling_summary"),
+                host_device_chains=data.get("host_device_chains", []),
                 user_inputs={
                     "agent_results": data.get("agent_results", {}),
                     "topology_summary": data.get("topology_summary", {}),
@@ -354,6 +355,8 @@ class AdvisorAgent(BaseAgent):
                     "pp_size": data.get("pp_size"),
                     "dp_size": data.get("dp_size"),
                     "diff_result": data.get("diff_result"),
+                    "source_analysis": data.get("source_analysis", {}),
+                    "root_cause_findings": data.get("root_cause_findings", []),
                 },
                 diff_result=data.get("diff_result"),
             )
