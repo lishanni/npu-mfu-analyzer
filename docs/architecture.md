@@ -593,7 +593,7 @@ Profiling A + Profiling B
 ### 添加新的 Python Skill
 
 ```python
-from src.skills import BaseSkill, SkillMetadata, SkillCategory, SkillResult
+from npu_mfu_analyzer.skills import BaseSkill, SkillMetadata, SkillCategory, SkillResult
 
 class MyNewSkill(BaseSkill):
     @property
@@ -635,7 +635,7 @@ variants:
 ### 添加新的 Agent
 
 ```python
-from src.agents.base_agent import BaseAgent, AnalysisResult
+from npu_mfu_analyzer.agents.base_agent import BaseAgent, AnalysisResult
 
 class MyNewAgent(BaseAgent):
     @property

@@ -242,7 +242,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from collections import defaultdict
 import pandas as pd
 
-from src.topology.topology_analyzer import TopologyAnalyzer, TopologyInfo, LinkType
+from npu_mfu_analyzer.topology.topology_analyzer import TopologyAnalyzer, TopologyInfo, LinkType
 
 logger = logging.getLogger(__name__)
 
@@ -642,7 +642,7 @@ def analyze_communication_matrix(
 ```python
 # src/agents/communication_agent.py (增强部分)
 
-from src.analyzers.communication_matrix_analyzer import (
+from npu_mfu_analyzer.analyzers.communication_matrix_analyzer import (
     CommunicationMatrixAnalyzer,
     CommunicationMatrix,
     LinkMetrics,
@@ -707,8 +707,8 @@ def analyze_comm_matrix(
     output: str = typer.Option("comm_matrix_report.md", "--output", "-o", help="输出文件"),
 ):
     """分析通信矩阵"""
-    from src.analyzers.communication_matrix_analyzer import analyze_communication_matrix
-    from src.data_loader.profiling_loader import ProfilingLoader
+    from npu_mfu_analyzer.analyzers.communication_matrix_analyzer import analyze_communication_matrix
+    from npu_mfu_analyzer.data_loader.profiling_loader import ProfilingLoader
 
     loader = ProfilingLoader(profiling_path)
     info = loader.detect()
@@ -751,7 +751,7 @@ def analyze_comm_matrix(
 # tests/unit/test_communication_matrix_analyzer.py
 
 import pytest
-from src.analyzers.communication_matrix_analyzer import (
+from npu_mfu_analyzer.analyzers.communication_matrix_analyzer import (
     CommunicationMatrixAnalyzer,
     CommunicationMatrix,
     LinkMetrics,

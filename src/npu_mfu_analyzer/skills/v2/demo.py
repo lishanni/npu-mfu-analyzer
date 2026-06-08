@@ -125,19 +125,19 @@ def print_claude_usage():
 在 Claude Code 中，你可以这样调用技能：
 
 1️⃣ 列出技能:
-   python -m src.skills.v2.skill_cli list-skills
+   python -m npu_mfu_analyzer.skills.v2.skill_cli list-skills
 
 2️⃣ 查看技能详情:
-   python -m src.skills.v2.skill_cli skill-info compute_mfu
+   python -m npu_mfu_analyzer.skills.v2.skill_cli skill-info compute_mfu
 
 3️⃣ 分析 Profiling 数据:
-   python -m src.skills.v2.skill_cli analyze /path/to/profiling
+   python -m npu_mfu_analyzer.skills.v2.skill_cli analyze /path/to/profiling
 
 4️⃣ 对比两个 Profiling:
-   python -m src.skills.v2.skill_cli compare /path/to/baseline /path/to/target
+   python -m npu_mfu_analyzer.skills.v2.skill_cli compare /path/to/baseline /path/to/target
 
 5️⃣ 执行单个技能:
-   python -m src.skills.v2.skill_cli execute compute_mfu /path/to/profiling
+   python -m npu_mfu_analyzer.skills.v2.skill_cli execute compute_mfu /path/to/profiling
 """)
 
 

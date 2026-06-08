@@ -1,174 +1,83 @@
 # CLAUDE.md - AI Agent Guide for NPU MFU Analyzer
 
-> This file helps AI agents (Claude, GPT, GitHub Copilot, etc.) understand and work with this project effectively.
+This file helps Claude, GPT, Copilot, and other coding agents understand the project quickly and avoid common mistakes.
 
-## Project Overview
+## What This Project Is
 
-**NPU MFU Analyzer** is a professional performance analysis tool for LLM training on Huawei Ascend NPU. It provides end-to-end analysis from profiling data parsing to optimization recommendations.
+NPU MFU Analyzer diagnoses Ascend NPU LLM training bottlenecks from profiling traces. It turns raw profiling outputs into MFU summaries, communication/idle/overlap breakdowns, structured "main contradiction" diagnosis, and prioritized optimization actions.
 
-### What This Tool Does
+The package import root is:
 
-- **MFU Analysis**: Calculate Model Flops Utilization for training workloads
-- **Performance Bottleneck Detection**: Identify compute, communication, memory bottlenecks
-- **Profiling Comparison**: Compare two profiling runs and find root causes of regression
-- **AIC Microarchitecture Analysis**: Diagnose AI Core bottlenecks (Cube/Vector utilization, L2 cache)
-- **Fusion Operator Discovery**: Find operator fusion opportunities from profiling data
-- **Root Cause Inference**: Automated root cause analysis with rule-based engine
+```python
+npu_mfu_analyzer
+```
 
-### Target Users
+Do not use the legacy `src.*` import path in new code or docs.
 
-- AI Infrastructure Engineers working with Ascend NPU
-- LLM Training Engineers optimizing model performance
-- Performance Analysts debugging training bottlenecks
-- DevOps Engineers monitoring training clusters
-
-### Supported Hardware
-
-- Atlas A2 series: 280T, 313T, 376T
-- Atlas 300I series
-- More hardware support via extensible registry
-
-## Key Technologies
-
-| Category | Technologies |
-|----------|-------------|
-| **NPU** | Huawei Ascend, CANN, ATB, AIC, AIV |
-| **Frameworks** | PyTorch, MindSpore, torch.compile, Megatron, DeepSpeed, FSDP |
-| **Communication** | HCCL, HCCS, RDMA, NCCL-compatible |
-| **LLM Backends** | OpenAI, Claude, DeepSeek, Ollama, Mock |
-
-## Quick Integration Examples
-
-### CLI Usage
+## Common Commands
 
 ```bash
-# Analyze profiling data
-npu-analyzer analyze /path/to/profiling --backend ollama
+pip install -e ".[dev]"
 
-# Compare two profiling runs
-npu-analyzer compare /path/to/before /path/to/after -b openai
-
-# AIC hardware metrics analysis
-npu-analyzer analyze-aic /path/to/profiling
-
-# Generate fusion operator code
-npu-analyzer generate /path/to/profiling -b claude
+npu-analyzer version
+npu-analyzer info examples/sample_profiling_small
+npu-analyzer summary examples/sample_profiling_small --max-steps 10
+npu-analyzer analyze examples/sample_profiling_small -b mock --no-host-device-correlation -o /tmp/sample_report.md
 ```
 
-### Python API
+For Zhipu GLM via the Anthropic-compatible Claude backend:
 
-```python
-import asyncio
-from src.agents.orchestrator import Orchestrator
-from src.llm import LLMConfig
-
-async def analyze():
-    config = LLMConfig(backend="ollama", model="qwen2.5:7b")
-    orchestrator = Orchestrator("/path/to/profiling", llm_config=config)
-    report = await orchestrator.run()
-    print(report.final_report)
-
-asyncio.run(analyze())
+```bash
+export ANTHROPIC_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+export ANTHROPIC_API_KEY="your_api_key"
+npu-analyzer analyze examples/sample_profiling_small -b claude -m GLM-4.7
 ```
 
-## Architecture Summary
+Never write real API keys into files, tests, docs, examples, commits, or CI logs.
 
-```
-Presentation Layer (CLI/Web/Python API)
-    ↓
-Agent Layer (13 Specialized Agents)
-    ↓
-Skill Layer (14 Expert Skills)
-    ↓
-Analysis Layer (15+ Analyzers)
-    ↓
-Data Layer (Profiling Loader, Stream Parser, DB Query)
-```
+## Key Entry Points
 
-## Key Files for AI Agents
+| Area | File |
+| --- | --- |
+| CLI | `src/npu_mfu_analyzer/cli/main.py` |
+| Analysis orchestration | `src/npu_mfu_analyzer/agents/orchestrator.py` |
+| Profiling loader | `src/npu_mfu_analyzer/data_loader/profiling_loader.py` |
+| Streaming trace parser | `src/npu_mfu_analyzer/data_loader/stream_parser.py` |
+| Skills v2 engine | `src/npu_mfu_analyzer/skills/v2/` |
+| LLM backends | `src/npu_mfu_analyzer/llm/llm_interface.py` |
+| Reports | `src/npu_mfu_analyzer/report/` |
 
-| File | Purpose |
-|------|---------|
-| `src/agents/orchestrator.py` | Main analysis orchestration |
-| `src/analyzers/` | Core analysis engines |
-| `src/data_loader/profiling_loader.py` | Unified data loading interface |
-| `src/hardware/registry.py` | Hardware specifications |
-| `src/llm/` | LLM backend implementations |
-| `src/cli/` | Command-line interface |
-| `docs/` | Detailed documentation |
+## Safe Defaults
 
-## Common Tasks for AI Agents
+- Use `-b mock` for tests and docs unless a real LLM call is explicitly required.
+- Use `examples/sample_profiling_small` for smoke tests.
+- Keep Host-Device correlation disabled for small docs examples.
+- Large `trace_view.json` files are guarded by default; use `--full-host-device-correlation` only when intentionally testing full correlation.
 
-### 1. Add New Analysis Feature
+## Development Rules
 
-1. Create analyzer in `src/analyzers/`
-2. Create corresponding agent in `src/agents/`
-3. Register in orchestrator
-4. Add CLI command in `src/cli/`
+- Keep public version strings consistent with `pyproject.toml`.
+- Prefer structured parser/loader APIs over ad hoc CSV or JSON string parsing.
+- Add tests for CLI-visible behavior, parsing fixes, and diagnosis logic changes.
+- Preserve graceful degradation when optional profiling tables are missing.
+- Treat real profiling data as sensitive; sanitize paths, user names, task names, cluster metadata, and secrets before committing fixtures.
 
-### 2. Add New Hardware Support
+## Useful Test Commands
 
-1. Add specs to `src/hardware/registry.py`
-2. Implement detection logic
-3. Update documentation
+```bash
+python -m py_compile \
+  src/npu_mfu_analyzer/cli/main.py \
+  src/npu_mfu_analyzer/agents/orchestrator.py \
+  src/npu_mfu_analyzer/llm/llm_interface.py
 
-### 3. Add New LLM Backend
-
-1. Implement backend in `src/llm/backends/`
-2. Register in `src/llm/factory.py`
-3. Add configuration support
-
-### 4. Fix Bugs
-
-- Follow existing code patterns
-- Maintain type annotations
-- Add tests for fixes
-- Reference msprof implementation for profiling data handling
-
-## Coding Conventions
-
-- **Style**: ruff formatter, line-length=120
-- **Types**: Full type annotations, dataclass preferred
-- **Async**: Use asyncio for I/O operations
-- **Error Handling**: Comprehensive exception handling with logging
-- **Testing**: pytest with ~115 test cases
-
-## Important Notes
-
-### Profiling Data Handling
-
-> **CRITICAL**: Always reference msprof (Huawei's official profiler) implementation when working with profiling data. Field mappings and calculation formulas must match msprof exactly.
-
-Key field mappings:
-- `Communication(Not Overlapped)` → `communication_not_overlapped`
-- `Computing` → `computing_time`
-- `Free` → `free_time`
-
-Step time formula:
-```python
-step_time = Computing + Communication(Not Overlapped) + Free
+pytest -q tests/unit/test_llm.py tests/unit/test_data_loader.py tests/unit/test_diagnosis_skills.py
 ```
 
-### LLM Integration
+## Project Links
 
-- Supports multiple backends with automatic failover
-- Mock backend available for testing without LLM
-- ResilientLLM provides retry/timeout/fallback
-
-## Resources
-
-- [Documentation](docs/)
-- [Installation Guide](docs/installation.md)
-- [API Reference](docs/api_reference.md)
-- [Architecture](docs/architecture.md)
-- [Troubleshooting](docs/troubleshooting.md)
-
-## Contact & Contribution
-
-- GitHub: https://github.com/lishanni/npu-mfu-analyzer
-- Issues: https://github.com/lishanni/npu-mfu-analyzer/issues
-- License: Apache-2.0
-
----
-
-*This file is optimized for AI agent understanding and integration.*
+- English README: `README.md`
+- Chinese README: `README.zh-CN.md`
+- Sample profiling fixture: `examples/sample_profiling_small`
+- Installation: `docs/installation.md`
+- Configuration: `docs/configuration.md`
+- API reference: `docs/api_reference.md`

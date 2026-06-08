@@ -1,0 +1,30 @@
+name: Feature request
+description: Suggest a new analyzer, parser, report, backend, or workflow.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What profiling or optimization problem should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the expected CLI/API/report behavior.
+    validations:
+      required: true
+  - type: input
+    id: scenario
+    attributes:
+      label: Training scenario
+      placeholder: "Megatron / MindSpeed / FSDP / MoE / long context / multi-node"
+  - type: textarea
+    id: data
+    attributes:
+      label: Profiling context
+      description: Mention available sanitized profiling data, CANN/torch-npu/PyTorch versions, and rank count.
+

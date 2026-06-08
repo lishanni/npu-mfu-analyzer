@@ -401,7 +401,7 @@ class ExtendedMemoryMetrics(MemoryMetrics):
             return "ub_pressure"
         elif self.hbm_bandwidth_utilization > 80:
             return "hbm_saturated"
-        elif self.locality_score < 50:
+        elif 0 < self.locality_score < 50:
             return "poor_locality"
         else:
             return "none"
@@ -639,7 +639,7 @@ class ExtendedAICMetrics(AICMetrics):
                 analysis.compute_detail = "cube_underutilized"
                 analysis.severity_score += 20
 
-            if arith.instruction_issue_rate < 50:
+            if 0 < arith.instruction_issue_rate < 50:
                 analysis.compute_detail = "low_issue_rate"
                 analysis.severity_score += 15
 

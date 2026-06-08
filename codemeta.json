@@ -1,0 +1,35 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "name": "NPU MFU Analyzer",
+  "description": "Diagnose Ascend NPU LLM training bottlenecks from profiling traces, including MFU, communication exposure, idle time, overlap failure, and structured optimization actions.",
+  "codeRepository": "https://github.com/lishanni/npu-mfu-analyzer",
+  "license": "https://spdx.org/licenses/Apache-2.0",
+  "programmingLanguage": "Python",
+  "runtimePlatform": "Python >=3.9",
+  "applicationCategory": [
+    "Performance Analysis",
+    "Machine Learning Infrastructure",
+    "Scientific Software"
+  ],
+  "keywords": [
+    "Ascend NPU",
+    "CANN",
+    "msprof",
+    "torch-npu",
+    "MindSpeed",
+    "MFU",
+    "LLM training",
+    "profiling",
+    "distributed training",
+    "performance diagnosis"
+  ],
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Shanni",
+      "familyName": "Li"
+    }
+  ]
+}
+

@@ -18,7 +18,6 @@
 | `OPENAI_API_KEY` | OpenAI API Key | - |
 | `ANTHROPIC_API_KEY` | Claude API Key | - |
 | `ANTHROPIC_BASE_URL` | Claude API 自定义地址（用于代理或兼容API） | - |
-| `CLAUDE_API_KEY` | Claude API Key（别名） | - |
 | `NPU_ANALYZER_DATA_DIR` | 数据存储目录 | `./data` |
 
 ## 配置文件

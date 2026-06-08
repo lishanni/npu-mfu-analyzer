@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+title: "NPU MFU Analyzer"
+message: "If you use NPU MFU Analyzer in research or engineering reports, please cite this repository."
+type: software
+authors:
+  - family-names: "Li"
+    given-names: "Shanni"
+repository-code: "https://github.com/lishanni/npu-mfu-analyzer"
+url: "https://github.com/lishanni/npu-mfu-analyzer"
+license: "Apache-2.0"
+keywords:
+  - Ascend NPU
+  - MFU
+  - LLM training
+  - profiling
+  - performance analysis
+  - torch-npu
+

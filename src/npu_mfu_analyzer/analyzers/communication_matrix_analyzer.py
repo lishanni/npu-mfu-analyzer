@@ -132,16 +132,16 @@ class LinkMetrics:
 
     def compute_derived_metrics(self):
         """计算派生指标"""
+        # 计算实测带宽
+        if self.total_transit_time_ms > 0:
+            self.achieved_bandwidth_gbps = self.total_transit_size_mb / self.total_transit_time_ms
+
         # 计算带宽利用率
         if self.theoretical_bandwidth_gbps > 0:
             self.bandwidth_utilization = min(
                 self.achieved_bandwidth_gbps / self.theoretical_bandwidth_gbps,
                 1.0
             )
-
-        # 计算实测带宽
-        if self.total_transit_time_ms > 0:
-            self.achieved_bandwidth_gbps = self.total_transit_size_mb / self.total_transit_time_ms
 
     def compute_anomaly_score(self, avg_bandwidth: float, std_bandwidth: float) -> float:
         """

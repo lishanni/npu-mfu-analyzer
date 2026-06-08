@@ -126,7 +126,7 @@ echo $ANTHROPIC_BASE_URL
 **解决方案**：
 ```python
 # 增加超时配置
-from src.llm.resilient_llm import ResilientLLM, ResilientConfig, TimeoutConfig
+from npu_mfu_analyzer.llm.resilient_llm import ResilientLLM, ResilientConfig, TimeoutConfig
 
 config = ResilientConfig(
     timeout=TimeoutConfig(

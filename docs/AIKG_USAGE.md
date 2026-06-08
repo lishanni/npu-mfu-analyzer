@@ -24,8 +24,9 @@ npu-analyzer generate /path/to/profiling -o ./my_kernels
 ### 使用 Claude API (GLM-4.7)
 
 ```bash
-# 设置 API Key
-export CLAUDE_API_KEY="your_api_key_here"
+# 设置 Anthropic 兼容 API
+export ANTHROPIC_BASE_URL="https://open.bigmodel.cn/api/anthropic"
+export ANTHROPIC_API_KEY="your_api_key"
 
 # 使用 Claude 后端生成
 npu-analyzer generate /path/to/profiling -b claude -m GLM-4.7
@@ -166,7 +167,7 @@ generated_kernels/
 ### Claude API
 
 ```bash
-export CLAUDE_API_KEY="your_claude_api_key"
+export ANTHROPIC_API_KEY="your_api_key"
 ```
 
 ### OpenAI API
@@ -237,7 +238,7 @@ python generated_kernels/<fusion_name>_bench.py
 
 ```bash
 # 1. 设置 API Key
-export CLAUDE_API_KEY="d3006992636344061cf969515871f9f4805c0256"
+export ANTHROPIC_API_KEY="your_api_key"
 
 # 2. 运行完整工作流
 npu-analyzer generate /path/to/msprof_data \

@@ -225,6 +225,8 @@ class Orchestrator:
         enable_aic_microarch: bool = True,
         enable_deep_operator_analysis: bool = True,
         enable_host_device_correlation: bool = True,
+        host_device_max_trace_mb: float = 512.0,
+        full_host_device_correlation: bool = False,
     ):
         """
         Args:
@@ -236,6 +238,8 @@ class Orchestrator:
             enable_aic_microarch: 是否启用 AIC 微架构分析
             enable_deep_operator_analysis: 是否启用深度算子分析 V2
             enable_host_device_correlation: 是否启用 Host-Device 关联分析
+            host_device_max_trace_mb: Host-Device 关联分析的 trace 文件大小保护阈值（MB）
+            full_host_device_correlation: 是否忽略大小保护，强制执行完整 Host-Device 关联分析
         """
         self.profiling_path = profiling_path
         self.llm_config = llm_config or LLMConfig()
@@ -245,6 +249,8 @@ class Orchestrator:
         self.enable_aic_microarch = enable_aic_microarch
         self.enable_deep_operator_analysis = enable_deep_operator_analysis
         self.enable_host_device_correlation = enable_host_device_correlation
+        self.host_device_max_trace_mb = host_device_max_trace_mb
+        self.full_host_device_correlation = full_host_device_correlation
 
         # 初始化组件
         self.loader = ProfilingLoader(profiling_path)
@@ -892,8 +898,23 @@ class Orchestrator:
                 return None, [], []
 
             # 使用第一个 trace 文件
-            trace_path = str(trace_files[0])
-            logger.info(f"Using trace file: {trace_path}")
+            trace_file = trace_files[0]
+            trace_path = str(trace_file)
+            trace_size_mb = trace_file.stat().st_size / (1024 * 1024)
+            logger.info(f"Using trace file: {trace_path} ({trace_size_mb:.1f} MB)")
+
+            if (
+                not self.full_host_device_correlation
+                and self.host_device_max_trace_mb > 0
+                and trace_size_mb > self.host_device_max_trace_mb
+            ):
+                logger.warning(
+                    "Skipping Host-Device correlation because trace file is %.1f MB, above the %.1f MB guardrail. "
+                    "Use --full-host-device-correlation or raise --host-device-max-trace-mb to run the full analysis.",
+                    trace_size_mb,
+                    self.host_device_max_trace_mb,
+                )
+                return None, [], []
 
             # 执行分析
             result = analyze_from_trace_file(trace_path)

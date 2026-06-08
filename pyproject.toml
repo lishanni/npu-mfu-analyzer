@@ -17,10 +17,17 @@ maintainers = [
 ]
 keywords = [
     "npu",
+    "ascend-npu",
     "ascend",
     "huawei-ascend",
+    "cann",
+    "msprof",
+    "torch-npu",
+    "mindspeed",
     "mfu",
     "model-flops-utilization",
+    "training-profiler",
+    "llm-performance",
     "llm-training",
     "performance-analysis",
     "profiling",

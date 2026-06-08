@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="NPU MFU Analyzer API",
     description="昇腾 NPU 大模型训练性能分析工具 API",
-    version="0.1.0",
+    version="0.5.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )

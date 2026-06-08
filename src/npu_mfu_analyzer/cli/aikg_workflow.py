@@ -102,7 +102,7 @@ class AIKGWorkflow:
             # 设置 API Key（如果指定）
             if self.backend == "claude":
                 import os
-                api_key = os.environ.get("CLAUDE_API_KEY")
+                api_key = os.environ.get("ANTHROPIC_API_KEY")
                 if api_key:
                     llm_config.api_key = api_key
 

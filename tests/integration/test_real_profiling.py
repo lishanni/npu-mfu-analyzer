@@ -159,8 +159,9 @@ def test_real_profiling_fusion_analysis():
             lines = extracted_code.split("\n")[:10]
             for line in lines:
                 print(f"    {line}")
-            if len(extracted_code.split("\n")) > 10:
-                print(f"    ... (省略 {len(extracted_code.split('\n')) - 10} 行)")
+            total_lines = len(extracted_code.split("\n"))
+            if total_lines > 10:
+                print(f"    ... (省略 {total_lines - 10} 行)")
         else:
             print("  ❌ 代码块提取失败")
 
@@ -300,11 +301,12 @@ async def test_aikg_generation_flow():
         prompt = req.to_aikg_prompt()
         print(f"\n  请求 {i} 的 Prompt 预览:")
         print("  " + "-" * 56)
-        lines = prompt.split("\n")[:15]  # 只显示前 15 行
+        prompt_lines = prompt.split("\n")
+        lines = prompt_lines[:15]  # 只显示前 15 行
         for line in lines:
             print(f"  {line}")
-        if len(prompt.split("\n")) > 15:
-            print(f"  ... (省略其余 {len(prompt.split('\n')) - 15} 行)")
+        if len(prompt_lines) > 15:
+            print(f"  ... (省略其余 {len(prompt_lines) - 15} 行)")
         print("  " + "-" * 56)
 
     return True

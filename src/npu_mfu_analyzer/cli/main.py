@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="npu-mfu-analyzer")
+@click.version_option(version="0.5.0", prog_name="npu-mfu-analyzer")
 def cli():
     """NPU MFU Analyzer - 昇腾 NPU 大模型训练性能分析工具"""
     pass
@@ -99,6 +99,18 @@ def cli():
     default=True,
     help="启用 Host-Device 关联分析 (默认: 启用)"
 )
+@click.option(
+    "--host-device-max-trace-mb",
+    type=float,
+    default=512.0,
+    show_default=True,
+    help="Host-Device 关联分析的 trace 文件大小保护阈值（MB）"
+)
+@click.option(
+    "--full-host-device-correlation",
+    is_flag=True,
+    help="忽略 trace 大小保护，强制执行完整 Host-Device 关联分析"
+)
 def analyze(
     profiling_path: str,
     output: Optional[str],
@@ -113,6 +125,8 @@ def analyze(
     aic_microarch: bool,
     aic_report_output: Optional[str],
     host_device_correlation: bool,
+    host_device_max_trace_mb: float,
+    full_host_device_correlation: bool,
 ):
     """
     分析 Profiling 数据，生成性能报告
@@ -127,6 +141,7 @@ def analyze(
         npu-analyzer analyze /path/to/profiling --comm-matrix --comm-matrix-output comm.html
         npu-analyzer analyze /path/to/profiling --dashboard --dashboard-output dashboard.html
         npu-analyzer analyze /path/to/profiling --aic-microarch --aic-report-output aic_report.html
+        npu-analyzer analyze /path/to/profiling --full-host-device-correlation
     """
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
@@ -141,7 +156,17 @@ def analyze(
 
     # 运行分析
     try:
-        report = asyncio.run(_run_analysis(profiling_path, backend, model, comm_matrix, dashboard, aic_microarch, host_device_correlation))
+        report = asyncio.run(_run_analysis(
+            profiling_path,
+            backend,
+            model,
+            comm_matrix,
+            dashboard,
+            aic_microarch,
+            host_device_correlation,
+            host_device_max_trace_mb,
+            full_host_device_correlation,
+        ))
 
         if report.success:
             click.echo(click.style("✅ 分析完成!", fg="green"))
@@ -248,6 +273,8 @@ async def _run_analysis(
     enable_dashboard: bool = True,
     enable_aic_microarch: bool = True,
     enable_host_device_correlation: bool = True,
+    host_device_max_trace_mb: float = 512.0,
+    full_host_device_correlation: bool = False,
 ):
     """执行分析"""
     from npu_mfu_analyzer.llm.llm_interface import LLMConfig
@@ -266,6 +293,8 @@ async def _run_analysis(
         enable_dashboard=enable_dashboard,
         enable_aic_microarch=enable_aic_microarch,
         enable_host_device_correlation=enable_host_device_correlation,
+        host_device_max_trace_mb=host_device_max_trace_mb,
+        full_host_device_correlation=full_host_device_correlation,
     )
     return await orchestrator.run()
 
@@ -918,7 +947,7 @@ def summary(profiling_path: str, max_steps: int):
 @cli.command()
 def version():
     """显示版本信息"""
-    click.echo("NPU MFU Analyzer v0.1.0")
+    click.echo("NPU MFU Analyzer v0.5.0")
     click.echo("昇腾 NPU 大模型训练性能分析工具")
 
 
@@ -1685,7 +1714,7 @@ def web(host: str, port: int, reload: bool):
     click.echo("按 Ctrl+C 停止服务\n")
     
     uvicorn.run(
-        "src.web.app:app",
+        "npu_mfu_analyzer.web.app:app",
         host=host,
         port=port,
         reload=reload,

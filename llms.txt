@@ -1,0 +1,32 @@
+# NPU MFU Analyzer
+
+NPU MFU Analyzer diagnoses Ascend NPU LLM training bottlenecks from profiling traces. It summarizes MFU, compute, communication, idle time, overlap, and structured optimization actions.
+
+Package import root: `npu_mfu_analyzer`
+
+Important files:
+- CLI: `src/npu_mfu_analyzer/cli/main.py`
+- Orchestrator: `src/npu_mfu_analyzer/agents/orchestrator.py`
+- Profiling loader: `src/npu_mfu_analyzer/data_loader/profiling_loader.py`
+- Skills v2: `src/npu_mfu_analyzer/skills/v2/`
+- LLM backend: `src/npu_mfu_analyzer/llm/llm_interface.py`
+
+Quick commands:
+- `npu-analyzer info examples/sample_profiling_small`
+- `npu-analyzer summary examples/sample_profiling_small --max-steps 10`
+- `npu-analyzer analyze examples/sample_profiling_small -b mock --no-host-device-correlation -o /tmp/report.md`
+
+Docs:
+- English README: `README.md`
+- Chinese README: `README.zh-CN.md`
+- AI agent guide: `CLAUDE.md`
+- Sample profiling data: `examples/sample_profiling_small`
+- Installation: `docs/installation.md`
+- Configuration: `docs/configuration.md`
+
+Safety:
+- Do not write real API keys into files.
+- Do not commit raw internal profiling traces.
+- Prefer mock backend for tests.
+- Use `npu_mfu_analyzer.*`, not legacy `src.*` imports.
+

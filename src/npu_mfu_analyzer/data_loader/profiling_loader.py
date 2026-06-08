@@ -70,6 +70,8 @@ class ProfilingLoader:
         "**/trace_view.json",
         "**/msprof_*.json",
         "**/communication.json",
+        "**/profiler_info_*.json",
+        "**/profiler_metadata.json",
     ]
 
     # Step Trace CSV（msprof-analyze 等工具生成的交付件，DB 无 STEP_TRACE 时降级使用）
@@ -129,9 +131,15 @@ class ProfilingLoader:
         for pattern in self.JSON_PATTERNS:
             json_paths.extend(glob.glob(str(self.profiling_path / pattern), recursive=True))
         
+        step_trace_paths = glob.glob(str(self.profiling_path / "**" / self.STEP_TRACE_CSV), recursive=True)
+        op_stat_paths = glob.glob(str(self.profiling_path / "**" / "op_statistic.csv"), recursive=True)
+        csv_paths = step_trace_paths + op_stat_paths
+
         # 确定数据类型
         if db_paths:
             data_type = "db"
+        elif csv_paths:
+            data_type = "csv"
         elif json_paths:
             data_type = "json"
         else:
@@ -144,10 +152,12 @@ class ProfilingLoader:
         rank_count = self._count_ranks(db_paths, json_paths)
         
         # 检测数据可用性
-        has_timeline = any("trace_view" in p for p in json_paths) or \
+        has_timeline = bool(step_trace_paths) or \
+                      any("trace_view" in p for p in json_paths) or \
                       any("pytorch_profiler" in p for p in db_paths)
         has_memory = any("memory" in p.lower() for p in json_paths + db_paths)
-        has_communication = any("communication" in p.lower() for p in json_paths) or \
+        has_communication = bool(step_trace_paths) or \
+                           any("communication" in p.lower() for p in json_paths) or \
                            any("cluster_analysis" in p for p in db_paths)
         
         self._info = ProfilingInfo(
@@ -169,7 +179,7 @@ class ProfilingLoader:
         """检测框架类型"""
         all_paths = " ".join(db_paths + json_paths).lower()
         
-        if "pytorch" in all_paths or "ascend_pytorch" in all_paths:
+        if "pytorch" in all_paths or "ascend_pytorch" in all_paths or "profiler_info" in all_paths:
             return "pytorch"
         elif "mindspore" in all_paths:
             return "mindspore"
@@ -208,9 +218,14 @@ class ProfilingLoader:
         ]
 
         for path in db_paths + json_paths:
+            try:
+                rank_path = str(Path(path).relative_to(self.profiling_path))
+            except ValueError:
+                rank_path = path
+
             # 首先尝试匹配已知前缀（精确匹配）
             for pattern in patterns:
-                matches = re.finditer(pattern, path, re.IGNORECASE)
+                matches = re.finditer(pattern, rank_path, re.IGNORECASE)
                 for match in matches:
                     rank_num = int(match.group(1))
                     ranks.add(rank_num)
@@ -218,7 +233,7 @@ class ProfilingLoader:
             # 如果没有匹配到已知前缀，尝试从目录结构推断
             # 例如: ASCEND_PROFILER_OUTPUT/worker-0/trace_view.json
             #      profiler_zarr/ma-job-xxx-worker-0_yyy/trace_view.json
-            path_parts = Path(path).parts
+            path_parts = Path(rank_path).parts
 
             # 查找包含数字序号的目录部分
             for part in path_parts:
@@ -329,7 +344,12 @@ class ProfilingLoader:
             if not df.empty:
                 logger.info("STEP_TRACE not in DB, using step_trace_time.csv as fallback")
             return df
-        return pd.DataFrame()  # JSON 格式需要从 trace_view 解析
+
+        # CSV-only sample/export directories can still provide step timing.
+        df = self._get_step_trace_from_csv(rank)
+        if not df.empty:
+            logger.info("Using step_trace_time.csv as step trace source")
+        return df
 
     def _get_step_trace_from_db(self, rank: Optional[int] = None) -> pd.DataFrame:
         """从 DB 获取 Step Trace"""
@@ -478,6 +498,9 @@ class ProfilingLoader:
                     return kernels
             except Exception as e:
                 logger.debug(f"Failed to get kernels from DB: {e}")
+                kernels = self._get_kernels_from_sqlite(db_path, top_n)
+                if kernels:
+                    return kernels
 
         # 尝试从 CSV 获取
         kernels = self._get_kernels_from_csv(rank, top_n)
@@ -488,6 +511,32 @@ class ProfilingLoader:
         kernels = self._get_kernels_from_timeline(rank, top_n)
 
         return kernels
+
+    def _get_kernels_from_sqlite(self, db_path: str, top_n: int) -> List[Dict[str, Any]]:
+        """从 SQLite TASK 表读取 Top Kernel，避免轻量环境强依赖 SQLAlchemy。"""
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT name, dur, cat
+                FROM TASK
+                WHERE cat = 'Kernel'
+                ORDER BY dur DESC
+                LIMIT ?
+                """,
+                (top_n,),
+            )
+            rows = cursor.fetchall()
+            conn.close()
+        except Exception as e:
+            logger.debug(f"Failed to get kernels with sqlite fallback: {e}")
+            return []
+
+        return [
+            {"name": row[0] or "unknown", "dur": float(row[1] or 0), "cat": row[2] or "Kernel"}
+            for row in rows
+        ]
 
     def _get_kernels_from_csv(self, rank: Optional[int], top_n: int) -> List[Dict[str, Any]]:
         """从 CSV 文件获取 Top Kernel 算子（按基础算子类型聚合）"""

@@ -306,6 +306,14 @@ class ProfilingDataSanitizer:
         # 复制事件，避免修改原始数据
         cleaned = dict(event)
 
+        # Accept compact trace-like events used by lightweight fixtures and tests.
+        # Chrome trace complete events use ph="X"; pid can safely default to 0 when
+        # the source only contains name/cat/ts/dur.
+        if "ph" not in cleaned and "ts" in cleaned and ("dur" in cleaned or "cat" in cleaned):
+            cleaned["ph"] = "X"
+        if "pid" not in cleaned and cleaned.get("ph") != "M":
+            cleaned["pid"] = 0
+
         # 首先检查必需字段
         # 元数据事件 (ph='M') 不需要 'ts' 字段，且可以使用 tid 代替 pid
         required_fields = ["name", "ph"]

@@ -102,6 +102,11 @@ OPTIMIZATION_STRATEGIES = {
 
     # 流水线瓶颈优化策略
     "pipeline_bound": {
+        "mte": [
+            "优化 MTE（Memory Transfer Engine）单元的数据调度",
+            "使用数据预取隐藏内存延迟",
+            "调整内存访问模式以减少 MTE 等待",
+        ],
         "mte_stall": [
             "优化 MTE（Memory Transfer Engine）单元的数据调度",
             "使用数据预取隐藏内存延迟",

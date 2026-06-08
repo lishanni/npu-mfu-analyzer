@@ -403,8 +403,8 @@ Web 服务基于 FastAPI，启动后自动生成 Swagger 文档：`http://localh
 ### 核心编排
 
 ```python
-from src.agents.orchestrator import Orchestrator, AnalysisReport
-from src.llm import LLMConfig
+from npu_mfu_analyzer.agents.orchestrator import Orchestrator, AnalysisReport
+from npu_mfu_analyzer.llm import LLMConfig
 
 # 单次分析
 orchestrator = Orchestrator(
@@ -415,7 +415,7 @@ report: AnalysisReport = await orchestrator.run()
 ```
 
 ```python
-from src.analyzers.comparison_orchestrator import ComparisonOrchestrator, ComparisonReport
+from npu_mfu_analyzer.analyzers.comparison_orchestrator import ComparisonOrchestrator, ComparisonReport
 
 # 对比分析
 orchestrator = ComparisonOrchestrator(
@@ -429,8 +429,8 @@ report: ComparisonReport = await orchestrator.run()
 ### 数据加载
 
 ```python
-from src.data_loader import ProfilingLoader
-from src.data_loader.data_summarizer import DataSummarizer
+from npu_mfu_analyzer.data_loader import ProfilingLoader
+from npu_mfu_analyzer.data_loader.data_summarizer import DataSummarizer
 
 loader = ProfilingLoader("/path/to/profiling")
 info = loader.get_profiling_info()       # ProfilingInfo
@@ -444,7 +444,7 @@ summary = summarizer.summarize(loader)   # ProfilingSummary
 ### 分析引擎
 
 ```python
-from src.analyzers import (
+from npu_mfu_analyzer.analyzers import (
     OverlapCalculator, SlowRankDetector, BubbleAnalyzer,
     MFUCalculator, SimilarityChecker, ProfilingDiffEngine,
     CommunicationMatrixAnalyzer, HostDeviceCorrelator,
@@ -479,8 +479,8 @@ findings = root_cause_engine.analyze_single(chains, stats)
 ### 硬件/模式
 
 ```python
-from src.hardware import get_registry, detect_hardware
-from src.pattern_matcher import UniversalPatternMatcher
+from npu_mfu_analyzer.hardware import get_registry, detect_hardware
+from npu_mfu_analyzer.pattern_matcher import UniversalPatternMatcher
 
 registry = get_registry()
 spec = registry.get_spec("Atlas A2", "280T")
@@ -492,7 +492,7 @@ pattern = matcher.detect_from_loader(loader)
 ### 技能引擎
 
 ```python
-from src.skills import get_engine
+from npu_mfu_analyzer.skills import get_engine
 
 engine = get_engine()
 result = engine.execute_skill("calculate_mfu", model_flops=2e15, step_time_ms=500, peak_tflops=280)
@@ -501,7 +501,7 @@ result = engine.execute_skill("calculate_mfu", model_flops=2e15, step_time_ms=50
 ### Roofline / What-if
 
 ```python
-from src.roofline import RooflineModeler, WhatIfSimulator, CurrentState
+from npu_mfu_analyzer.roofline import RooflineModeler, WhatIfSimulator, CurrentState
 
 modeler = RooflineModeler(hardware_name="atlas_a2_280t")
 mfu_result = modeler.estimate_theoretical_mfu(model_flops=42e12, model_memory_bytes=50e9, step_time_ms=500, num_devices=8)
@@ -514,8 +514,8 @@ scenario = simulator.simulate_hardware_upgrade("376T")
 ### LLM 接口
 
 ```python
-from src.llm import LLMConfig, LLMFactory, LLMInterface
-from src.llm.resilient_llm import ResilientLLM, ResilientConfig
+from npu_mfu_analyzer.llm import LLMConfig, LLMFactory, LLMInterface
+from npu_mfu_analyzer.llm.resilient_llm import ResilientLLM, ResilientConfig
 
 # 基础用法
 llm = LLMFactory.create(LLMConfig(backend="openai"))
@@ -529,7 +529,7 @@ response = await llm.complete(messages)
 ### 报告生成
 
 ```python
-from src.report import ReportGenerator, ReportFormat
+from npu_mfu_analyzer.report import ReportGenerator, ReportFormat
 
 generator = ReportGenerator()
 report_text = generator.generate(report_data, format=ReportFormat.HTML)
@@ -539,17 +539,17 @@ generator.save(report_text, "/output/report.html")
 ### Host-Device 堆栈关联分析
 
 ```python
-from src.analyzers.host_device_correlator import (
+from npu_mfu_analyzer.analyzers.host_device_correlator import (
     HostDeviceCorrelator,
     analyze_from_trace_file,
     build_call_chains_from_file,
 )
-from src.analyzers.operator_source_classifier import (
+from npu_mfu_analyzer.analyzers.operator_source_classifier import (
     OperatorSourceClassifier,
     classify_operators,
     discover_new_patterns,
 )
-from src.data_loader.stack_types import HostDeviceChain, CorrelationStats
+from npu_mfu_analyzer.data_loader.stack_types import HostDeviceChain, CorrelationStats
 
 # 从 trace 文件构建调用链
 chains = build_call_chains_from_file("/path/to/trace_view.json")
@@ -566,7 +566,7 @@ print(f"融合算子: {stats.fusion_ops}")
 ### 根因推理引擎
 
 ```python
-from src.analyzers.root_cause_engine import (
+from npu_mfu_analyzer.analyzers.root_cause_engine import (
     RootCauseSkillEngine,
     RootCauseFinding,
     analyze_root_causes,
@@ -593,12 +593,12 @@ findings = engine.analyze(chains_a, chains_b, diff_result)
 ### 通信矩阵分析
 
 ```python
-from src.analyzers.communication_matrix_analyzer import (
+from npu_mfu_analyzer.analyzers.communication_matrix_analyzer import (
     CommunicationMatrixAnalyzer,
     CommunicationMatrix,
 )
-from src.analyzers.communication_matrix_visualizer import CommunicationMatrixVisualizer
-from src.analyzers.link_performance_dashboard import generate_dashboard
+from npu_mfu_analyzer.analyzers.communication_matrix_visualizer import CommunicationMatrixVisualizer
+from npu_mfu_analyzer.analyzers.link_performance_dashboard import generate_dashboard
 
 # 分析通信矩阵
 analyzer = CommunicationMatrixAnalyzer(world_size=8, npus_per_machine=8)

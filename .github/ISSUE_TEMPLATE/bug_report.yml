@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a parser, diagnosis, CLI, or report generation problem.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and what did you expect?
+    validations:
+      required: true
+  - type: input
+    id: profiling_type
+    attributes:
+      label: Profiling type
+      placeholder: "db / csv / trace_view.json / mixed"
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: CANN / torch-npu / PyTorch versions
+      placeholder: "CANN 8.5, torch-npu 2.7.1, PyTorch 2.7"
+  - type: input
+    id: ranks
+    attributes:
+      label: Rank count
+      placeholder: "1 / 4 / 8 / 64"
+  - type: checkboxes
+    id: data
+    attributes:
+      label: Available sanitized data
+      options:
+        - label: CSV summaries are available.
+        - label: DB files are available.
+        - label: trace_view.json is available.
+        - label: A tiny sanitized reproducer can be shared.
+  - type: textarea
+    id: command
+    attributes:
+      label: Command
+      description: Paste the command without secrets.
+      render: bash
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Paste relevant logs without secrets or internal paths.
+      render: text
+

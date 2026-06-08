@@ -340,7 +340,7 @@ class MFUSkill(BaseSkill):
 
     def execute(self, context: SkillContext) -> SkillResult:
         # 纯 Python 计算，不调用 LLM
-        from src.analyzers.mfu_calculator import MFUCalculator
+        from npu_mfu_analyzer.analyzers.mfu_calculator import MFUCalculator
 
         calculator = MFUCalculator(context.hardware_spec)
         mfu_metrics = calculator.calculate(context.profiling_summary.operators)
